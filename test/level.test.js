@@ -4,10 +4,14 @@ import { LevelGen } from '../src/level.js';
 import { makeRng, maxPitWidth, DOUBLE_AIR, SINGLE_AIR, GROUND_Y } from '../src/physics.js';
 import { defaultConfig, stageParams, CHANNELS } from '../src/params.js';
 import { THEMES } from '../src/themes.js';
+import { readFileSync } from 'node:fs';
+import { setSpriteMeta, aspectOf } from '../src/sprites.js';
+
+setSpriteMeta(JSON.parse(readFileSync(new URL('../assets/sprites/sprites.json', import.meta.url), 'utf8')));
 
 function run(channel, stage, seed, length = 60000) {
   const sp = stageParams(defaultConfig().channels[channel], stage);
-  const gen = new LevelGen({ rng: makeRng(seed), params: sp, theme: THEMES[(stage - 1) % THEMES.length] });
+  const gen = new LevelGen({ rng: makeRng(seed), params: sp, theme: THEMES[(stage - 1) % THEMES.length], aspect: aspectOf });
   gen.generateUntil(length);
   return { gen, sp };
 }
@@ -69,4 +73,18 @@ test('BOSS 階段只產生平地', () => {
   gen.generateUntil(20000);
   assert.equal(gen.mobs.length, mobs);
   assert.equal(gen.pits.length, pits);
+});
+
+test('每個地區用到的怪物、BOSS 和職業都有動畫資料', () => {
+  const meta = JSON.parse(readFileSync(new URL('../assets/sprites/sprites.json', import.meta.url), 'utf8'));
+  for (const t of THEMES) {
+    for (const m of [...t.ground_mobs, ...t.tall_mobs, ...t.fly_mobs]) {
+      assert.ok(meta[m.key]?.move?.length, `${t.id} ${m.key} move`);
+    }
+    assert.ok(meta[t.boss.key]?.move?.length && meta[t.boss.key]?.attack?.length, `${t.id} boss ${t.boss.key}`);
+  }
+  for (const j of ['warrior', 'magician', 'archer', 'thief', 'pirate']) {
+    for (const a of ['walk', 'jump', 'prone', 'alert', 'attack', 'stand']) assert.ok(meta[`job-${j}`]?.[a]?.length, `${j} ${a}`);
+    assert.ok(meta[`job-${j}`].walk.length >= 3, `${j} walk 要有多格`);
+  }
 });

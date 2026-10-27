@@ -147,7 +147,7 @@ h2 { font-size: 1.7em; }
   padding: 0.6em 0.3em;
   cursor: pointer;
 }
-.job img { height: 4.6em; object-fit: contain; transform: scaleX(-1); }
+.job canvas { width: 6.4em; height: auto; }
 .job b { font-size: 1.05em; }
 .job small { color: var(--muted); font-size: 0.75em; line-height: 1.3; }
 .job[aria-pressed="true"] { border-color: var(--accent); background: #fff1e0; box-shadow: 0 0 0 3px rgba(232,99,42,0.25); }

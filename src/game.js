@@ -7,20 +7,26 @@ import {
 import { stageParams } from './params.js';
 import { themeForStage, THEMES, ITEM_ICONS } from './themes.js';
 import { LevelGen } from './level.js';
-import { loadAll, getImage, aspect } from './assets.js';
+import { loadAll, getImage } from './assets.js';
+import { drawSprite, refFrame, aspectOf, actionDuration, loadSheets, previewSrc } from './sprites.js';
 import { sfx } from './audio.js';
 
 const POWER_TIME = { dash: 4, magnet: 8, giant: 5 };
 const POWER_LABEL = { dash: '加速', magnet: '磁鐵', giant: '巨大化' };
 const lerp = (a, b, t) => a + (b - a) * t;
 
+const SPIN_TIME = 0.38; // 二段跳翻滾一圈的時間
+const PLAYER_SCALE = 1.2;
+
 export function preloadGameAssets(job) {
-  const srcs = [job.src, 'assets/items/haste.png', ...ITEM_ICONS];
+  const keys = [job.key];
+  const srcs = ['assets/items/haste.png', ...ITEM_ICONS];
   for (const t of THEMES) {
-    for (const m of [...t.ground_mobs, ...t.tall_mobs, ...t.fly_mobs]) srcs.push(m.src);
-    srcs.push(t.boss.src);
+    for (const m of [...t.ground_mobs, ...t.tall_mobs, ...t.fly_mobs]) keys.push(m.key);
+    keys.push(t.boss.key);
+    srcs.push(previewSrc(t.boss.key));
   }
-  return loadAll(srcs);
+  return Promise.all([loadSheets([...new Set(keys)]), loadAll(srcs)]);
 }
 
 export class Game {
@@ -62,7 +68,9 @@ export class Game {
     this.texts = [];
     this.banner = { text: `STAGE 1 ・ ${this.theme.name}`, t: 2.2 };
 
-    this.gen = new LevelGen({ rng: this.rng, params: this.sp, theme: this.theme, aspect, startX: 0 });
+    this.gen = new LevelGen({ rng: this.rng, params: this.sp, theme: this.theme, aspect: aspectOf, startX: 0 });
+    // 角色動畫狀態：目前動作、動作經過時間、翻滾／攻擊／受傷的剩餘時間
+    this.anim = { action: 'walk', t: 0, spin: 0, attack: 0, hurt: 0 };
 
     this.paused = false;
     this.running = false;
@@ -104,7 +112,10 @@ export class Game {
     p.jumps++;
     p.onGround = false;
     sfx.jump();
-    if (p.jumps > 1) this.burst(PLAYER_X, p.y, '#ffffff', 6);
+    if (p.jumps > 1) {
+      this.burst(PLAYER_X, p.y, '#ffffff', 6);
+      this.anim.spin = SPIN_TIME;
+    }
   }
 
   setSlide(v) { this.keys.slide = v; }
@@ -157,6 +168,8 @@ export class Game {
     this.updateItems(dt);
     this.updatePhase(dt, speed);
 
+    this.updateAnim(dt, speed);
+
     p.hp -= this.sp.hpDrain * dt;
     if (p.hp <= 0) this.gameOver('HP 歸零');
   }
@@ -189,6 +202,38 @@ export class Game {
     if (p.y > VIEW_H + 120) this.fellInPit();
   }
 
+  // 決定角色現在要播哪個動作：受傷 > 攻擊 > 趴下 > 跳躍 > 跑步
+  playerAction() {
+    const p = this.player, a = this.anim;
+    if (this.phase === 'over' || a.hurt > 0) return 'alert';
+    if (a.attack > 0) return 'attack';
+    if (p.sliding) return 'prone';
+    if (!p.onGround) return 'jump';
+    return 'walk';
+  }
+
+  updateAnim(dt, speed) {
+    const a = this.anim;
+    a.spin = Math.max(0, a.spin - dt);
+    a.attack = Math.max(0, a.attack - dt);
+    a.hurt = Math.max(0, a.hurt - dt);
+    const action = this.playerAction();
+    if (action !== a.action) { a.action = action; a.t = 0; }
+    // 跑越快腳步越快
+    a.t += action === 'walk' ? dt * Math.max(1, speed / 330) : dt;
+    if (this.boss) this.boss.attackT = Math.max(0, (this.boss.attackT || 0) - dt);
+  }
+
+  // 標題畫面的展示：角色在平地上一直跑，不會受傷
+  demo(dt) {
+    this.time += dt;
+    this.worldX += 170 * dt;
+    this.gen.boss = true;
+    this.gen.generateUntil(this.worldX + VIEW_W + 500);
+    this.gen.prune(this.worldX - 300);
+    this.updateAnim(dt, 330);
+  }
+
   fellInPit() {
     const p = this.player;
     this.damage(this.sp.pitDamage, true);
@@ -211,6 +256,7 @@ export class Game {
     p.hp -= amount;
     p.inv = 1.3;
     p.hurtFlash = 0.3;
+    this.anim.hurt = 0.45;
     sfx.hit();
     this.text(PLAYER_X, p.y - 100, `-${Math.round(amount)}`, '#ff5252');
     if (p.hp <= 0) this.gameOver(force ? '掉進坑洞' : '被怪物打倒');
@@ -232,6 +278,7 @@ export class Game {
         m.vx = 500; m.vy = -600; m.rot = 0;
         this.smashed++;
         this.addScore(200);
+        if (this.anim.attack <= 0) this.anim.attack = actionDuration(this.job.key, 'attack') || 0.33;
         sfx.smash();
         this.burst(sx + m.w / 2, m.bottom - m.h / 2, '#ffd54f', 10);
       } else {
@@ -312,7 +359,7 @@ export class Game {
       this.phase = 'boss';
       this.gen.boss = true;
       const t = this.theme;
-      this.boss = { ...t.boss, t: 0, dur: this.sp.bossDuration, fire: 1.6, y: 0, leaving: 0 };
+      this.boss = { ...t.boss, t: 0, dur: this.sp.bossDuration, fire: 1.6, leaving: 0, attackT: 0 };
       this.banner = { text: `BOSS 出現！ ${t.boss.name}`, t: 2 };
     }
 
@@ -324,8 +371,9 @@ export class Game {
         if (b.fire <= 0 && b.t > 1.2 && b.t < b.dur - 0.8) {
           b.fire = 1 / this.sp.bossFireRate * lerp(0.7, 1.3, this.rng());
           const high = this.rng() < 0.45;
+          b.attackT = actionDuration(b.key, 'attack') || 0.6;
           this.projectiles.push({
-            x: VIEW_W - 160, y: high ? GROUND_Y - FLY_CLEARANCE - 22 : GROUND_Y - 24,
+            x: VIEW_W - 60 - b.h * 0.55, y: high ? GROUND_Y - FLY_CLEARANCE - 22 : GROUND_Y - 24,
             vx: -(speed * 0.6 + 260), r: 20, high,
           });
         }
@@ -601,18 +649,20 @@ export class Game {
     for (const m of this.gen.mobs) {
       const x = m.x - this.worldX;
       if (x > VIEW_W + 20 || x + m.w < -200) continue;
-      const img = getImage(m.src);
-      const bob = m.kind === 'fly' ? Math.sin(this.time * 4 + m.bob) * 6 : Math.abs(Math.sin(this.time * 6 + m.bob)) * -3;
-      c.save();
-      c.translate(x + m.w / 2, m.bottom - m.h / 2 + bob);
-      if (m.dead) c.rotate(m.rot);
+      const ref = refFrame(m.key);
+      const s = ref ? m.h / ref.h : 1;
+      const bob = m.kind === 'fly' && !m.dead ? Math.sin(this.time * 4 + m.bob) * 6 : 0;
+      // 腳底位置：讓參考格剛好填滿碰撞框
+      const fx = x + (ref ? ref.ox * s : m.w / 2);
+      const fy = m.bottom - (ref ? (ref.h - ref.oy) * s : 0) + bob;
       if (!m.dead && m.kind !== 'fly') {
         c.fillStyle = 'rgba(0,0,0,0.18)';
-        c.beginPath(); c.ellipse(0, m.h / 2 - bob, m.w * 0.4, 6, 0, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.ellipse(x + m.w / 2, m.bottom, m.w * 0.4, 6, 0, 0, Math.PI * 2); c.fill();
       }
-      if (img) c.drawImage(img, -m.w / 2, -m.h / 2, m.w, m.h);
-      else { c.fillStyle = '#c62828'; c.fillRect(-m.w / 2, -m.h / 2, m.w, m.h); }
-      c.restore();
+      const drawn = drawSprite(c, m.key, m.dead ? 'hit' : 'move', this.time + m.phase, fx, fy, s, {
+        rotate: m.dead ? m.rot : 0, pivot: ref ? ref.oy - ref.h / 2 : 0,
+      });
+      if (!drawn) { c.fillStyle = '#c62828'; c.fillRect(x, m.bottom - m.h, m.w, m.h); }
     }
   }
 
@@ -628,16 +678,16 @@ export class Game {
     }
     const b = this.boss;
     if (!b) return;
-    const img = getImage(b.src);
+    const ref = refFrame(b.key);
     const enter = Math.min(1, b.t / 1);
-    const h = b.h;
-    const w = img ? h * (img.naturalWidth / img.naturalHeight) : h;
-    let x = VIEW_W - w * 0.85 + (1 - enter) * 300 + (b.leaving ? b.leaving * 500 : 0);
-    let y = GROUND_Y - h + Math.sin(this.time * 2.5) * 8;
-    c.save();
-    if (b.leaving) { c.globalAlpha = Math.max(0, 1 - b.leaving); }
-    if (img) c.drawImage(img, x, y, w, h);
-    c.restore();
+    const scale = ref ? b.h / ref.h : 1;
+    const right = ref ? (ref.w - ref.ox) * scale : b.h / 2;
+    const fx = VIEW_W - 24 - right + (1 - enter) * 300 + (b.leaving ? b.leaving * 500 : 0);
+    const attacking = b.attackT > 0;
+    const atkDur = actionDuration(b.key, 'attack');
+    drawSprite(c, b.key, attacking ? 'attack' : 'move', attacking ? atkDur - b.attackT : this.time, fx, GROUND_Y, scale, {
+      loop: !attacking, alpha: b.leaving ? Math.max(0, 1 - b.leaving) : 1,
+    });
     if (!b.leaving) {
       // 剩餘時間條
       const left = Math.max(0, b.dur - b.t);
@@ -657,39 +707,34 @@ export class Game {
   drawPlayer() {
     const c = this.ctx;
     const p = this.player;
-    if (p.inv > 0 && Math.floor(this.time * 20) % 2 && !this.giant) return;
-    const img = getImage(this.job.src);
-    const scale = this.giant ? 1.8 : 1;
-    const ar = img ? img.naturalWidth / img.naturalHeight : 0.7;
-    let h = PLAYER_H * 1.15 * scale;
-    let w = h * ar;
-    let rot = 0;
-    let bob = 0;
-    if (p.sliding) { h = PLAYER_SLIDE_H * 1.3 * scale; w = w * 1.15; rot = 0; }
-    else if (!p.onGround) rot = Math.max(-0.3, Math.min(0.3, p.vy / 2500));
-    else bob = Math.abs(Math.sin(this.time * 14)) * -5;
+    const a = this.anim;
+    const scale = PLAYER_SCALE * (this.giant ? 1.8 : 1);
+    const key = this.job.key;
 
     // 影子
     c.fillStyle = 'rgba(0,0,0,0.2)';
-    c.beginPath(); c.ellipse(PLAYER_X, GROUND_Y + 2, 24 * scale, 6, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(PLAYER_X, GROUND_Y + 2, 22 * scale, 6, 0, 0, Math.PI * 2); c.fill();
 
+    // 加速時的殘影
     if (p.power.dash > 0) {
-      c.fillStyle = 'rgba(41,182,246,0.35)';
-      for (let i = 1; i <= 3; i++) c.fillRect(PLAYER_X - w / 2 - i * 22, p.y - h + 10, 16, h - 20);
+      for (let i = 3; i >= 1; i--) {
+        drawSprite(c, key, a.action, a.t - i * 0.05, PLAYER_X - i * 26, p.y, scale, { flip: true, alpha: 0.12 + 0.08 * (3 - i) });
+      }
     }
-    c.save();
-    c.translate(PLAYER_X, p.y - h / 2 + bob);
-    c.rotate(rot);
-    c.scale(-1, 1); // 原圖面向左，翻成面向右
-    if (p.power.giant > 0) { c.shadowColor = '#e040fb'; c.shadowBlur = 20; }
-    if (img) c.drawImage(img, -w / 2, -h / 2, w, h);
-    else { c.fillStyle = '#ffcc80'; c.fillRect(-w / 2, -h / 2, w, h); }
-    if (p.hurtFlash > 0 && img) c.drawImage(tinted(img), -w / 2, -h / 2, w, h);
-    c.restore();
+    if (p.inv > 0 && Math.floor(this.time * 20) % 2 && !this.giant && this.phase !== 'over') return;
+
+    const rotate = a.spin > 0 ? (1 - a.spin / SPIN_TIME) * Math.PI * 2 : 0;
+    const opts = { flip: true, rotate, pivot: 32, loop: a.action !== 'attack' };
+    if (this.giant) { c.save(); c.shadowColor = '#e040fb'; c.shadowBlur = 18; }
+    const drawn = drawSprite(c, key, a.action, a.t, PLAYER_X, p.y, scale, opts);
+    if (this.giant) c.restore();
+    if (!drawn) { c.fillStyle = '#ffcc80'; c.fillRect(PLAYER_X - 20, p.y - PLAYER_H, 40, PLAYER_H); }
+    if (p.hurtFlash > 0) drawSprite(c, key, a.action, a.t, PLAYER_X, p.y, scale, { ...opts, tint: true });
+
     if (p.power.magnet > 0) {
       c.strokeStyle = `rgba(239,83,80,${0.3 + Math.sin(this.time * 8) * 0.15})`;
       c.lineWidth = 3;
-      c.beginPath(); c.arc(PLAYER_X, p.y - h / 2, 70, 0, Math.PI * 2); c.stroke();
+      c.beginPath(); c.arc(PLAYER_X, p.y - 36 * scale, 70, 0, Math.PI * 2); c.stroke();
     }
   }
 
@@ -768,7 +813,7 @@ export class Game {
     roundRect(c, px, py, pw, 10, 5); c.fill();
     c.fillStyle = this.phase === 'run' ? '#81c784' : '#ba68c8';
     roundRect(c, px, py, pw * (this.phase === 'run' ? this.stageProgress : 1), 10, 5); c.fill();
-    const bossImg = getImage(this.theme.boss.src);
+    const bossImg = getImage(previewSrc(this.theme.boss.key));
     if (bossImg) c.drawImage(bossImg, px + pw - 8, py - 10, 30, 30 * bossImg.naturalHeight / bossImg.naturalWidth);
 
     // 道具剩餘時間
@@ -798,23 +843,6 @@ export class Game {
 }
 
 // ---------- 小型繪圖工具 ----------
-// 受傷時疊上的紅色剪影（只染角色本身，不染背景）
-const tintCache = new WeakMap();
-function tinted(img) {
-  let cv = tintCache.get(img);
-  if (cv) return cv;
-  cv = document.createElement('canvas');
-  cv.width = img.naturalWidth;
-  cv.height = img.naturalHeight;
-  const t = cv.getContext('2d');
-  t.drawImage(img, 0, 0);
-  t.globalCompositeOperation = 'source-atop';
-  t.fillStyle = 'rgba(255,40,40,0.55)';
-  t.fillRect(0, 0, cv.width, cv.height);
-  tintCache.set(img, cv);
-  return cv;
-}
-
 function roundRect(c, x, y, w, h, r) {
   c.beginPath();
   const rr = Math.min(r, w / 2, h / 2);

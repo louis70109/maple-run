@@ -41,5 +41,9 @@ ES modules 需要透過 http 開啟，不能直接雙擊 `index.html`。
 
 ## 素材
 
-圖片取自 [rms-data](https://github.com/louis70109/rms-data)（MapleRoyals 攻略備份）。
+- 角色與怪物的逐格動畫：用 `scripts/fetch_sprites.py` 從 [maplestory.io](https://maplestory.io) 抓取並打包成
+  `assets/sprites/`（已 commit，遊戲執行時不需連外）。要換裝備或怪物，改腳本裡的 ID 後執行
+  `python3 scripts/fetch_sprites.py`（需要 Pillow）。
+- 道具圖示與 PWA 圖示：取自 [rms-data](https://github.com/louis70109/rms-data)（MapleRoyals 攻略備份）。
+
 楓之谷相關素材版權屬 NEXON 所有，本專案為非商業的同人作品。

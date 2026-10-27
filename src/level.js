@@ -7,7 +7,7 @@ import { ITEM_ICONS } from './themes.js';
 const lerp = (a, b, t) => a + (b - a) * t;
 
 export class LevelGen {
-  // aspect(src) 回傳圖片寬高比，用來算怪物寬度
+  // aspect(key) 回傳怪物動畫的寬高比，用來算碰撞框寬度
   constructor({ rng, params, theme, aspect = () => 1, startX = 0 }) {
     this.rng = rng;
     this.params = params;
@@ -86,9 +86,9 @@ export class LevelGen {
     const list = kind === 'fly' ? t.fly_mobs : kind === 'tall' ? t.tall_mobs : t.ground_mobs;
     const m = this.pick(list);
     const h = m.h;
-    const w = Math.min(h * 1.6, h * this.aspect(m.src));
+    const w = Math.min(h * 1.8, h * this.aspect(m.key));
     const bottom = kind === 'fly' ? GROUND_Y - FLY_CLEARANCE : GROUND_Y;
-    this.mobs.push({ kind, src: m.src, x, w, h, bottom, bob: this.rng() * Math.PI * 2 });
+    this.mobs.push({ kind, key: m.key, x, w, h, bottom, phase: this.rng() * 10, bob: this.rng() * Math.PI * 2 });
     return w;
   }
 

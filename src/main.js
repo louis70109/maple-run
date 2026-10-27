@@ -3,7 +3,7 @@ import { CHANNELS, stageParams } from './params.js';
 import { JOBS } from './themes.js';
 import { VIEW_W } from './physics.js';
 import { Game, preloadGameAssets } from './game.js';
-import { loadImage } from './assets.js';
+import { loadSpriteMeta, loadSheets, drawSprite } from './sprites.js';
 import { isMuted, setMuted } from './audio.js';
 import { loadPublishedConfig, activeConfig, isPreview, getScores, addScore, getPrefs, savePrefs } from './store.js';
 import { openGm } from './gm.js';
@@ -19,7 +19,7 @@ const sel = { channel: CHANNELS[0], job: JOBS.find((j) => j.id === getPrefs().jo
 function show(name) {
   for (const s of screens) $(`#screen-${s}`).classList.toggle('hidden', s !== name);
   if (name === 'channel') renderChannels();
-  if (name === 'job') renderJobs();
+  if (name === 'job') { renderJobs(); requestAnimationFrame(animateJobs); }
   if (name === 'ranking') renderRanking(sel.channel.id);
   if (name === 'title') renderTitle();
 }
@@ -37,20 +37,29 @@ function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   canvas.width = Math.round(rect.width * dpr) || VIEW_W;
   canvas.height = Math.round(canvas.width * 9 / 16);
-  if (!game || !game.running) drawIdle();
 }
 window.addEventListener('resize', resize);
 
-// 選單背景：畫一張靜止的弓箭手村
+// 選單背景：角色在弓箭手村一直往前跑（展示用，不會受傷）
 let idle = null;
-function drawIdle() {
+let idleRunning = false;
+let idleLast = 0;
+function idleFrame(now) {
+  if (game || $('#stage').classList.contains('hidden')) { idle = null; idleRunning = false; return; }
   if (!idle) {
     idle = new Game(canvas, { channel: CHANNELS[0], channelParams: activeConfig().channels.easy, job: sel.job, seed: 7 });
-    idle.gen.generateUntil(VIEW_W + 200);
     idle.banner = null;
     idle.drawHud = () => {};
+    idleLast = now;
   }
+  idle.demo(Math.min(0.05, (now - idleLast) / 1000));
+  idleLast = now;
   idle.draw();
+  requestAnimationFrame(idleFrame);
+}
+function drawIdle() {
+  idle = null; // 下一格重新建立（例如換了職業）
+  if (!idleRunning && !game) { idleRunning = true; requestAnimationFrame(idleFrame); }
 }
 
 // ---------- 標題 ----------
@@ -109,10 +118,11 @@ function renderJobs() {
     const el = document.createElement('button');
     el.className = 'job';
     el.setAttribute('aria-pressed', String(j === sel.job));
-    el.innerHTML = `<img src="${j.src}" alt=""><b>${j.name}</b><small>${j.perk}</small>`;
+    el.innerHTML = `<canvas width="120" height="110" aria-hidden="true"></canvas><b>${j.name}</b><small>${j.perk}</small>`;
     el.addEventListener('click', () => {
       sel.job = j;
       savePrefs({ job: j.id });
+      drawIdle();
       for (const b of list.children) b.setAttribute('aria-pressed', String(b === el));
     });
     el.addEventListener('dblclick', startGame);
@@ -120,6 +130,21 @@ function renderJobs() {
   }
 }
 $('#btn-start').addEventListener('click', startGame);
+
+// 職業卡片：選中的職業跑步，其他的站著呼吸
+function animateJobs(now) {
+  const list = $('#job-list');
+  if ($('#screen-job').classList.contains('hidden')) return;
+  [...list.children].forEach((el, i) => {
+    const cv = el.querySelector('canvas');
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    const j = JOBS[i];
+    const action = j === sel.job ? 'walk' : 'stand';
+    drawSprite(ctx, j.key, action, now / 1000 + i * 0.3, cv.width / 2, cv.height - 8, 1.25, { flip: true });
+  });
+  requestAnimationFrame(animateJobs);
+}
 
 // ---------- 遊戲 ----------
 async function startGame() {
@@ -242,15 +267,16 @@ function route() {
   $('#gm').classList.toggle('hidden', !gm);
   $('#stage').classList.toggle('hidden', gm);
   if (gm) { endGame(); openGm($('#gm')); }
-  else { idle = null; resize(); show('title'); }
+  else { resize(); drawIdle(); show('title'); }
 }
 window.addEventListener('hashchange', route);
 
 // ---------- 啟動 ----------
 (async function boot() {
-  await Promise.all([loadPublishedConfig(), loadImage(sel.job.src), loadImage('assets/mobs/m1210103.png')]);
+  await Promise.all([loadPublishedConfig(), loadSpriteMeta()]);
+  await loadSheets(JOBS.map((j) => j.key));
   route();
-  preloadGameAssets(sel.job).then(() => { if (!game) { idle = null; drawIdle(); } });
+  preloadGameAssets(sel.job);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }

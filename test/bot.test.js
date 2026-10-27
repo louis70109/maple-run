@@ -4,6 +4,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 globalThis.Image = class { set src(_) {} }; // assets.js 在 node 底下不需要真的載圖
+const { readFileSync } = await import('node:fs');
+const { setSpriteMeta } = await import('../src/sprites.js');
+setSpriteMeta(JSON.parse(readFileSync(new URL('../assets/sprites/sprites.json', import.meta.url), 'utf8'))); // 用真實的怪物尺寸
 const { Game } = await import('../src/game.js');
 const { defaultConfig, CHANNELS } = await import('../src/params.js');
 const { JOBS } = await import('../src/themes.js');

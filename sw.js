@@ -1,12 +1,12 @@
 /* MapleRun Service Worker
  *  - 殼（HTML / CSS / JS）：安裝時預先快取；請求時網路優先、離線用快取，所以有網路永遠拿到最新版。
  *  - config.json：網路優先，GM 發佈的新設定一上線就生效；離線時用上次的設定。
- *  - assets/*（圖片）：快取優先，第一次載入後就能離線玩。
- *  - __BUILD__ 由部署流程換成 commit SHA，新版上線時會清掉舊的殼快取。
+ *  - assets/*（圖片）：快取優先，第一次載入後就能離線玩。sprites.json 等資料檔走網路優先。
+ *  - __BUILD__ 由部署流程換成 commit SHA，新版上線時會清掉舊的快取（圖片會重新下載，確保 sprite 更新後一致）。
  */
 const VERSION = "__BUILD__";
 const CORE_CACHE = "maple-run-core-" + VERSION;
-const ASSET_CACHE = "maple-run-assets-v1";
+const ASSET_CACHE = "maple-run-assets-" + VERSION;
 const CORE_URLS = [
   "./",
   "index.html",
@@ -23,6 +23,8 @@ const CORE_URLS = [
   "src/audio.js",
   "src/store.js",
   "src/gm.js",
+  "src/sprites.js",
+  "assets/sprites/sprites.json",
   "assets/icons/icon-192.png",
   "assets/icons/icon-512.png",
 ];
@@ -39,7 +41,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(
-        keys.filter((k) => k.startsWith("maple-run-core-") && k !== CORE_CACHE).map((k) => caches.delete(k))
+        keys.filter((k) => k.startsWith("maple-run-") && k !== CORE_CACHE && k !== ASSET_CACHE).map((k) => caches.delete(k))
       ))
       .then(() => self.clients.claim())
   );
@@ -51,7 +53,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  if (url.pathname.includes("/assets/")) {
+  if (url.pathname.includes("/assets/") && !url.pathname.endsWith(".json")) {
     event.respondWith(
       caches.match(req).then((hit) => hit || fetch(req).then((res) => {
         if (res.ok) {
