@@ -84,22 +84,29 @@ export const themeForStage = (stage) => THEMES[(stage - 1) % THEMES.length];
 
 // 職業攻擊：melee＝近戰（前方範圍內最多 targets 隻）、ball＝飛行道具。
 // power＝每下扣幾點怪物耐久（一般怪 1、高大怪 2），dmg＝畫面上顯示的傷害基準。
+// bossDmg＝每下扣 BOSS 多少血：近戰很高（BOSS 衝過來時是主力），遠程只能慢慢磨（盜賊一次兩鏢）。
+// 近戰另外可以「格擋」：揮砍範圍內的 BOSS 攻擊會被打掉。
 // 特效圖：fx-<職業>（effect 出招、ball 飛行道具、hit 命中），由 scripts/fetch_sprites.py 產生。
 export const JOBS = [
   { id: 'warrior', name: '劍士', key: 'job-warrior', perk: '最大 HP +20%', hpBonus: 1.2,
-    attack: { name: '劍氣縱橫', type: 'melee', range: 165, top: 125, targets: 3, power: 2, cooldown: 0.5, dmg: 260, sound: 'swing',
+    skill: { name: '突進', cooldown: 14, desc: '往前衝過大半個畫面，撞飛沿途所有怪，衝完停在前方（直接貼近 BOSS）' },
+    attack: { role: '近戰', bossDmg: 5, name: '劍氣縱橫', type: 'melee', range: 165, top: 125, targets: 3, power: 2, cooldown: 0.5, dmg: 260, sound: 'swing',
       fxScale: 0.62, hitScale: 0.6 } },
   { id: 'magician', name: '法師', key: 'job-magician', perk: '道具效果時間 +50%', powerupBonus: 1.5,
-    attack: { name: '能量箭', type: 'ball', speed: 820, range: 560, power: 1, pierce: 0, cooldown: 0.55, dmg: 240, sound: 'magic',
+    skill: { name: '暴風雪', cooldown: 16, desc: '畫面結冰，冰柱砸向每一隻怪；BOSS 冰凍 3 秒不能行動' },
+    attack: { role: '遠程', bossDmg: 1.5, name: '能量箭', type: 'ball', speed: 820, range: 560, power: 1, pierce: 0, cooldown: 0.55, dmg: 240, sound: 'magic',
       fxScale: 0.45, ballScale: 0.42, hitScale: 0.6, ballR: 18 } },
   { id: 'archer', name: '弓箭手', key: 'job-archer', perk: '跳躍更高', jumpBonus: 1.08,
-    attack: { name: '斷魂箭', type: 'ball', speed: 1250, range: 720, power: 1, pierce: 1, cooldown: 0.45, dmg: 200, sound: 'shoot',
+    skill: { name: '暴風神射', cooldown: 15, desc: '3 秒內連射穿透箭，貫穿一整排' },
+    attack: { role: '遠程', bossDmg: 1.2, name: '斷魂箭', type: 'ball', speed: 1250, range: 720, power: 1, pierce: 1, cooldown: 0.45, dmg: 200, sound: 'shoot',
       fxScale: 0.45, ballScale: 1.8, hitScale: 0.5, ballR: 12 } },
   { id: 'thief', name: '盜賊', key: 'job-thief', perk: '可以三段跳', maxJumps: 3,
-    attack: { name: '雙飛斬', type: 'ball', speed: 1000, range: 560, power: 1, pierce: 0, count: 2, cooldown: 0.5, dmg: 150, sound: 'throw',
+    skill: { name: '楓幣炸彈', cooldown: 14, desc: '引爆畫面上所有楓幣（楓幣加倍收下），楓幣越多越痛' },
+    attack: { role: '遠程', bossDmg: 0.7, name: '雙飛斬', type: 'ball', speed: 1000, range: 560, power: 1, pierce: 0, count: 2, cooldown: 0.5, dmg: 150, sound: 'throw',
       fxScale: 0.42, ballScale: 1.7, hitScale: 0.45, ballR: 13 } },
   { id: 'pirate', name: '海盜', key: 'job-pirate', perk: '楓幣價值 +30%', mesoBonus: 1.3,
-    attack: { name: '翻身踢', type: 'melee', range: 135, top: 150, targets: 4, power: 2, cooldown: 0.42, dmg: 220, sound: 'swing',
+    skill: { name: '炸彈桶', cooldown: 15, desc: '滾出燃燒的炸彈桶撞飛沿途的怪，碰到 BOSS 大爆炸' },
+    attack: { role: '近戰', bossDmg: 4, name: '翻身踢', type: 'melee', range: 135, top: 150, targets: 4, power: 2, cooldown: 0.42, dmg: 220, sound: 'swing',
       fxScale: 0.5, hitScale: 0.6 } },
 ];
 

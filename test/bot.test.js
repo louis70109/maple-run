@@ -10,7 +10,7 @@ setSpriteMeta(JSON.parse(readFileSync(new URL('../assets/sprites/sprites.json', 
 const { Game } = await import('../src/game.js');
 const { defaultConfig, CHANNELS } = await import('../src/params.js');
 const { JOBS } = await import('../src/themes.js');
-const { PLAYER_X, PLAYER_W } = await import('../src/physics.js');
+const { PLAYER_W } = await import('../src/physics.js');
 
 function botStep(g) {
   const p = g.player;
@@ -41,8 +41,8 @@ function botStep(g) {
     if (d < speed * 0.05) { wantJump = true; needHigh = needHigh || pit.x1 - pit.x0 > speed * 0.45; }
   }
   for (const pr of g.projectiles) {
-    if (pr.x + pr.r < PLAYER_X - PLAYER_W / 2) continue; // 已經過去了
-    const t = Math.max(0, (pr.x - pr.r - (PLAYER_X + PLAYER_W / 2)) / -pr.vx);
+    if (pr.x + pr.r < g.px - PLAYER_W / 2) continue; // 已經過去了
+    const t = Math.max(0, (pr.x - pr.r - (g.px + PLAYER_W / 2)) / -pr.vx);
     if (pr.high && t < 0.35 && p.onGround) slide = true;
     if (!pr.high && t < 0.2) wantJump = true;
   }
