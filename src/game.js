@@ -10,7 +10,7 @@ import { LevelGen } from './level.js';
 import { loadAll, getImage } from './assets.js';
 import { drawSprite, refFrame, aspectOf, actionDuration, loadSheets, previewSrc } from './sprites.js';
 import { sfx } from './audio.js';
-import { initSkill, castSkill, updateSkill, drawSkill, onKill, skillReady } from './skills.js';
+import { initSkill, castSkill, updateSkill, drawSkill, onKill, skillReady, levelUp, MAX_LEVEL } from './skills.js';
 
 const POWER_TIME = { dash: 4, magnet: 8, giant: 5 };
 const POWER_LABEL = { dash: '加速', magnet: '磁鐵', giant: '巨大化' };
@@ -24,7 +24,7 @@ const PLAYER_SCALE = 1.2;
 
 export function preloadGameAssets(job) {
   const keys = [job.key, `fx-${job.id}`, `sk-${job.id}`];
-  const srcs = ['assets/items/haste.png', previewSrc(`sk-${job.id}`), ...ITEM_ICONS];
+  const srcs = ['assets/items/haste.png', 'assets/items/skillbook.png', previewSrc(`sk-${job.id}`), ...ITEM_ICONS];
   for (const t of THEMES) {
     for (const m of [...t.ground_mobs, ...t.tall_mobs, ...t.fly_mobs]) keys.push(m.key);
     keys.push(t.boss.key);
@@ -514,6 +514,9 @@ export class Game {
         sfx.potion();
         break;
       }
+      case 'skillup':
+        levelUp(this);
+        break;
       case 'power': {
         p.power[it.kind] = POWER_TIME[it.kind] * (this.job.powerupBonus || 1);
         this.text(sx, it.y - 24, POWER_LABEL[it.kind] + '!', '#fff59d');
@@ -629,7 +632,11 @@ export class Game {
     this.addScore(bonus);
     const label = defeated ? `擊敗 ${b.name}！` : 'STAGE CLEAR';
     this.text(VIEW_W / 2, 200, `${label}  +${Math.round(bonus * this.sp.scoreMultiplier)}`, '#fff176', 2);
-    if (defeated) this.bossKills = (this.bossKills || 0) + 1;
+    if (defeated) {
+      this.bossKills = (this.bossKills || 0) + 1;
+      // 提早打倒 BOSS 必掉一本技能升級券
+      this.gen.items.push({ type: 'skillup', x: this.worldX + this.px + 160, y: GROUND_Y - 60, r: 18 });
+    }
     this.player.hp = Math.min(this.player.hpMax, this.player.hp + this.player.hpMax * 0.3);
     sfx.clear();
     this.phase = 'clear';
@@ -660,7 +667,8 @@ export class Game {
       this.stop();
       this.onEnd?.({
         score: Math.round(this.score), meso: this.meso, stage: this.stage,
-        distance: Math.round(this.distance / 10), smashed: this.smashed, bossKills: this.bossKills || 0, reason,
+        distance: Math.round(this.distance / 10), smashed: this.smashed, bossKills: this.bossKills || 0,
+        skillLevel: this.skill.level, reason,
       });
     }, 1200);
   }
@@ -857,7 +865,28 @@ export class Game {
         const img = getImage(it.icon);
         if (img) c.drawImage(img, x - 15, y - 15, 30, 30);
       } else if (it.type === 'power') this.drawPowerIcon(x, y, it.kind, 20);
+      else if (it.type === 'skillup') this.drawSkillBook(x, y);
     }
+  }
+
+  // 技能升級券：金色光暈裡的技能書
+  drawSkillBook(x, y) {
+    const c = this.ctx;
+    const pulse = 1 + Math.sin(this.time * 6) * 0.1;
+    const g = c.createRadialGradient(x, y, 2, x, y, 30 * pulse);
+    g.addColorStop(0, 'rgba(255,241,118,0.9)');
+    g.addColorStop(1, 'rgba(255,193,7,0)');
+    c.fillStyle = g;
+    c.beginPath(); c.arc(x, y, 30 * pulse, 0, Math.PI * 2); c.fill();
+    const img = getImage('assets/items/skillbook.png');
+    if (img) c.drawImage(img, x - 18, y - 16, 36, 32);
+    c.font = 'bold 12px sans-serif';
+    c.textAlign = 'center';
+    c.lineWidth = 3;
+    c.strokeStyle = '#5d4037';
+    c.strokeText('SKILL UP', x, y + 26);
+    c.fillStyle = '#fff59d';
+    c.fillText('SKILL UP', x, y + 26);
   }
 
   drawPowerIcon(x, y, kind, r) {
@@ -1103,15 +1132,27 @@ export class Game {
     const bossImg = getImage(previewSrc(this.theme.boss.key));
     if (bossImg) c.drawImage(bossImg, px + pw - 8, py - 10, 30, 30 * bossImg.naturalHeight / bossImg.naturalWidth);
 
+    // 大絕招等級（★ 表示）
+    const lvl = this.skill.level;
+    c.textAlign = 'left';
+    c.font = 'bold 13px sans-serif';
+    const stars = '★'.repeat(lvl) + '☆'.repeat(MAX_LEVEL - lvl);
+    const label = `${this.job.skill.name} Lv.${lvl} ${stars}`;
+    c.lineWidth = 3;
+    c.strokeStyle = 'rgba(0,0,0,0.6)';
+    c.strokeText(label, x + 4, y + 68);
+    c.fillStyle = '#ffe082';
+    c.fillText(label, x + 4, y + 68);
+
     // 道具剩餘時間
     let bx = x + 16;
     for (const k of ['dash', 'magnet', 'giant']) {
       if (p.power[k] <= 0) continue;
-      this.drawPowerIcon(bx, y + 80, k, 13);
+      this.drawPowerIcon(bx, y + 96, k, 13);
       c.fillStyle = '#fff';
       c.font = 'bold 12px sans-serif';
       c.textAlign = 'center';
-      c.fillText(p.power[k].toFixed(1), bx, y + 104);
+      c.fillText(p.power[k].toFixed(1), bx, y + 120);
       bx += 40;
     }
 

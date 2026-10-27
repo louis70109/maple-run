@@ -20,7 +20,7 @@ test('遊戲執行時的檔案沒有連到外部網站（GM 發佈用的 GitHub 
 
 test('遊戲用到的圖片都在 repo 裡', () => {
   const meta = JSON.parse(read('assets/sprites/sprites.json'));
-  const files = [...ITEM_ICONS, 'assets/items/haste.png',
+  const files = [...ITEM_ICONS, 'assets/items/haste.png', 'assets/items/skillbook.png',
     ...Object.keys(meta).flatMap((k) => [`assets/sprites/${k}.png`, `assets/sprites/preview/${k}.png`])];
   for (const f of files) assert.ok(existsSync(new URL(`../${f}`, import.meta.url)), `缺少 ${f}`);
 });

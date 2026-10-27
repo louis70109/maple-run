@@ -105,6 +105,10 @@ export class LevelGen {
     } else if (!this.calm && this.rng() < p.powerupChance) {
       this.items.push({ type: 'power', kind: this.pick(['dash', 'magnet', 'giant']), x: x0 + len / 2, y: GROUND_Y - 120, r: 20 });
       this.coinLine(x0 + 40, x1 - 40, GROUND_Y - 40);
+    } else if (!this.calm && this.rng() < (p.skillUpChance || 0)) {
+      // 技能升級券放在要跳起來才吃得到的高度
+      this.items.push({ type: 'skillup', x: x0 + len / 2, y: GROUND_Y - 115, r: 18 });
+      this.coinLine(x0 + 40, x1 - 40, GROUND_Y - 40);
     } else {
       this.coinLine(x0 + 40, x1 - 40, GROUND_Y - 40);
     }

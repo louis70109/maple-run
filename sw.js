@@ -33,6 +33,7 @@ const CORE_URLS = [
 const STATIC_ASSETS = [
   ...Array.from({ length: 40 }, (_, i) => `assets/items/${4009800 + i}.webp`),
   "assets/items/haste.png",
+  "assets/items/skillbook.png",
   "assets/icons/maskable-512.png",
   "assets/icons/apple-touch-icon.png",
 ];

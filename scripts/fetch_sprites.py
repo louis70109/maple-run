@@ -86,6 +86,8 @@ SIGNATURE = {
     'pirate': {'icon': SKILL.format(530, 5301001) + '/icon', 'effect': SKILL.format(530, 5301001) + '/effect',
                'ball': SKILL.format(530, 5301001) + '/ball', 'hit': SKILL.format(530, 5301001) + '/hit/0'},  # Barrel Bomb 炸彈桶
 }
+# 其他道具圖示（存成 assets/items/<名稱>.png）
+ITEMS = {'skillbook': 2280003}  # 技能升級券：楓之谷的技能書
 MAX_FRAMES = 12  # 太長的攻擊動畫抽格，控制檔案大小
 
 
@@ -235,6 +237,10 @@ def main():
     for job, parts in SIGNATURE.items():
         print('sk', job)
         pack(f'sk-{job}', {name: wz_frames(path) for name, path in parts.items()}, meta)
+    for name, item in ITEMS.items():
+        print('item', name)
+        data = get(f'{API}/GMS/{VERSION}/item/{item}/icon', binary=True)
+        Image.open(io.BytesIO(data)).convert('RGBA').save(os.path.join(ROOT, 'assets', 'items', f'{name}.png'), optimize=True)
     with open(os.path.join(OUT, 'sprites.json'), 'w') as f:
         json.dump(meta, f, separators=(',', ':'))
     total = sum(os.path.getsize(os.path.join(OUT, n)) for n in os.listdir(OUT) if n.endswith('.png'))

@@ -238,6 +238,7 @@ function updateSkillButton(g) {
   const p = Math.max(0, Math.min(1, g.skillReady));
   btn.style.setProperty('--p', p.toFixed(3));
   btn.classList.toggle('ready', p >= 1 && !g.skill.active);
+  btn.querySelector('small').textContent = `Lv.${g.skill.level}`;
 }
 
 // ---------- 結果 ----------
@@ -251,7 +252,8 @@ function showResult(r) {
     <div><span>距離</span><b>${r.distance.toLocaleString()} m</b></div>
     <div><span>楓幣</span><b>${r.meso.toLocaleString()}</b></div>
     <div><span>打倒怪物</span><b>${r.smashed}</b></div>
-    <div><span>打倒 BOSS</span><b>${r.bossKills}</b></div>`;
+    <div><span>打倒 BOSS</span><b>${r.bossKills}</b></div>
+    <div><span>絕招等級</span><b>Lv.${r.skillLevel}</b></div>`;
   $('#result-form').classList.remove('hidden');
   $('#result-rank').classList.add('hidden');
   $('#result-name').value = getPrefs().name || '';

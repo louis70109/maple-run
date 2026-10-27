@@ -46,6 +46,8 @@ export const PARAMS = [
     desc: 'BOSS 的血量（每關 +12%）。時間內打倒可提早過關、獎勵加倍；近戰每下 11～13，遠程約 1～1.5', def: { easy: 50, normal: 60, hard: 75 } },
   { key: 'powerupChance', label: '道具機率', unit: '', min: 0, max: 0.5, step: 0.01, group: '關卡',
     desc: '每段地形出現加速／磁鐵／巨大化的機率', def: { easy: 0.12, normal: 0.09, hard: 0.07 } },
+  { key: 'skillUpChance', label: '技能升級券機率', unit: '', min: 0, max: 0.3, step: 0.01, group: '關卡',
+    desc: '每段地形出現技能升級券（技能書）的機率；吃到大絕招升一級（最高 Lv.5）。提早打倒 BOSS 必掉一本', def: { easy: 0.1, normal: 0.09, hard: 0.07 } },
   { key: 'scoreMultiplier', label: '分數倍率', unit: '×', min: 0.5, max: 5, step: 0.1, group: '關卡',
     desc: '這個頻道的分數乘數', def: { easy: 1, normal: 1.5, hard: 2 } },
 ];
@@ -97,6 +99,7 @@ export function stageParams(ch, stage) {
     bossFireRate: ch.bossFireRate * (1 + 0.1 * n),
     bossHp: Math.round(ch.bossHp * (1 + 0.12 * n)),
     powerupChance: ch.powerupChance,
+    skillUpChance: ch.skillUpChance,
     scoreMultiplier: ch.scoreMultiplier,
   };
 }

@@ -43,5 +43,6 @@ export const sfx = {
   magic: () => tone(500, 0.2, 'sine', 0.07, 700),
   mobHit: () => tone(420, 0.06, 'square', 0.04, -200),
   skill: () => { [330, 440, 660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'sawtooth', 0.05), i * 50)); setTimeout(() => tone(110, 0.5, 'square', 0.07, -60), 220); },
+  levelUp: () => [523, 784, 1047, 1319, 1568].forEach((f, i) => setTimeout(() => tone(f, 0.14, 'triangle', 0.07), i * 70)),
   over: () => [392, 330, 262, 196].forEach((f, i) => setTimeout(() => tone(f, 0.25, 'triangle', 0.07), i * 160)),
 };
