@@ -118,7 +118,7 @@ function renderJobs() {
     const el = document.createElement('button');
     el.className = 'job';
     el.setAttribute('aria-pressed', String(j === sel.job));
-    el.innerHTML = `<canvas width="120" height="110" aria-hidden="true"></canvas><b>${j.name}</b><small>${j.perk}</small>`;
+    el.innerHTML = `<canvas width="120" height="110" aria-hidden="true"></canvas><b>${j.name}</b><small>${j.attack.name}<br>${j.perk}</small>`;
     el.addEventListener('click', () => {
       sel.job = j;
       savePrefs({ job: j.id });
@@ -140,8 +140,12 @@ function animateJobs(now) {
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, cv.width, cv.height);
     const j = JOBS[i];
-    const action = j === sel.job ? 'walk' : 'stand';
-    drawSprite(ctx, j.key, action, now / 1000 + i * 0.3, cv.width / 2, cv.height - 8, 1.25, { flip: true });
+    // 選中的職業反覆示範攻擊，其他的站著呼吸
+    const t = now / 1000 + i * 0.3;
+    const chosen = j === sel.job;
+    const atkLen = 1.4;
+    const action = chosen && t % atkLen < 0.4 ? 'attack' : chosen ? 'walk' : 'stand';
+    drawSprite(ctx, j.key, action, chosen && action === 'attack' ? t % atkLen : t, cv.width / 2, cv.height - 8, 1.25, { flip: true, loop: action !== 'attack' });
   });
   requestAnimationFrame(animateJobs);
 }
@@ -178,14 +182,17 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) pause
 // 鍵盤
 const JUMP_KEYS = new Set(['Space', 'ArrowUp', 'KeyW', 'KeyZ']);
 const SLIDE_KEYS = new Set(['ArrowDown', 'KeyS', 'KeyX']);
+const ATTACK_KEYS = new Set(['ControlLeft', 'ControlRight', 'KeyJ', 'KeyF']);
 window.addEventListener('keydown', (e) => {
   if (!game || e.target.closest('input, textarea')) return;
   if (JUMP_KEYS.has(e.code)) { e.preventDefault(); if (!e.repeat) game.jump(); }
   else if (SLIDE_KEYS.has(e.code)) { e.preventDefault(); game.setSlide(true); }
+  else if (ATTACK_KEYS.has(e.code)) { e.preventDefault(); if (!e.repeat) game.setAttack(true); }
   else if (e.code === 'KeyP' || e.code === 'Escape') pause(!game.paused);
 });
 window.addEventListener('keyup', (e) => {
   if (game && SLIDE_KEYS.has(e.code)) game.setSlide(false);
+  if (game && ATTACK_KEYS.has(e.code)) game.setAttack(false);
 });
 
 // 觸控按鈕（pointer events，同時支援滑鼠）
@@ -198,6 +205,7 @@ function bindHold(btn, down, up) {
 }
 bindHold($('#btn-jump'), () => game?.jump());
 bindHold($('#btn-slide'), () => game?.setSlide(true), () => game?.setSlide(false));
+bindHold($('#btn-attack'), () => game?.setAttack(true), () => game?.setAttack(false));
 
 // ---------- 結果 ----------
 function showResult(r) {
@@ -209,7 +217,7 @@ function showResult(r) {
     <div><span>到達關卡</span><b>STAGE ${r.stage}</b></div>
     <div><span>距離</span><b>${r.distance.toLocaleString()} m</b></div>
     <div><span>楓幣</span><b>${r.meso.toLocaleString()}</b></div>
-    <div><span>撞飛怪物</span><b>${r.smashed}</b></div>`;
+    <div><span>打倒怪物</span><b>${r.smashed}</b></div>`;
   $('#result-form').classList.remove('hidden');
   $('#result-rank').classList.add('hidden');
   $('#result-name').value = getPrefs().name || '';

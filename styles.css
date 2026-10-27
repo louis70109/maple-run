@@ -191,9 +191,11 @@ h2 { font-size: 1.7em; }
 .touch-btn small { font-size: 0.45em; font-weight: 400; opacity: 0.8; }
 .touch-btn.left { left: 3cqw; }
 .touch-btn.right { right: 3cqw; }
+.touch-btn.attack { right: calc(5cqw + 20cqh); bottom: 3cqh; width: 16cqh; height: 16cqh; min-width: 60px; min-height: 60px; font-size: 3cqh; background: rgba(232,99,42,0.35); }
 .touch-btn.active { background: rgba(232,99,42,0.6); }
 @media (hover: hover) and (pointer: fine) {
   .touch-btn { width: 13cqh; height: 13cqh; font-size: 2.6cqh; opacity: 0.65; }
+  .touch-btn.attack { right: calc(4cqw + 13cqh); width: 11cqh; height: 11cqh; font-size: 2.2cqh; }
 }
 
 .rotate-hint {

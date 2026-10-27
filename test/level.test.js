@@ -80,11 +80,13 @@ test('每個地區用到的怪物、BOSS 和職業都有動畫資料', () => {
   for (const t of THEMES) {
     for (const m of [...t.ground_mobs, ...t.tall_mobs, ...t.fly_mobs]) {
       assert.ok(meta[m.key]?.move?.length, `${t.id} ${m.key} move`);
+      assert.ok(meta[m.key]?.die?.length, `${t.id} ${m.key} die`);
     }
     assert.ok(meta[t.boss.key]?.move?.length && meta[t.boss.key]?.attack?.length, `${t.id} boss ${t.boss.key}`);
   }
   for (const j of ['warrior', 'magician', 'archer', 'thief', 'pirate']) {
     for (const a of ['walk', 'jump', 'prone', 'alert', 'attack', 'stand']) assert.ok(meta[`job-${j}`]?.[a]?.length, `${j} ${a}`);
     assert.ok(meta[`job-${j}`].walk.length >= 3, `${j} walk 要有多格`);
+    assert.ok(meta[`fx-${j}`]?.effect?.length && meta[`fx-${j}`]?.hit?.length, `${j} 攻擊特效`);
   }
 });

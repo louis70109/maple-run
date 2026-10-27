@@ -19,7 +19,7 @@ const SPIN_TIME = 0.38; // 二段跳翻滾一圈的時間
 const PLAYER_SCALE = 1.2;
 
 export function preloadGameAssets(job) {
-  const keys = [job.key];
+  const keys = [job.key, `fx-${job.id}`];
   const srcs = ['assets/items/haste.png', ...ITEM_ICONS];
   for (const t of THEMES) {
     for (const m of [...t.ground_mobs, ...t.tall_mobs, ...t.fly_mobs]) keys.push(m.key);
@@ -71,10 +71,14 @@ export class Game {
     this.gen = new LevelGen({ rng: this.rng, params: this.sp, theme: this.theme, aspect: aspectOf, startX: 0 });
     // 角色動畫狀態：目前動作、動作經過時間、翻滾／攻擊／受傷的剩餘時間
     this.anim = { action: 'walk', t: 0, spin: 0, attack: 0, hurt: 0 };
+    this.fxKey = `fx-${job.id}`;
+    this.attackCd = 0;
+    this.shots = []; // 玩家的飛行道具（畫面座標）
+    this.effects = []; // 技能特效、命中火花
 
     this.paused = false;
     this.running = false;
-    this.keys = { slide: false };
+    this.keys = { slide: false, attack: false };
     this.last = 0;
     this.frame = this.frame.bind(this);
   }
@@ -120,6 +124,132 @@ export class Game {
 
   setSlide(v) { this.keys.slide = v; }
 
+  // 按住攻擊鍵會依冷卻時間連續攻擊（跟楓之谷一樣）
+  setAttack(v) {
+    this.keys.attack = v;
+    if (v) this.attack();
+  }
+
+  attack() {
+    const p = this.player;
+    const atk = this.job.attack;
+    if (!atk || this.phase === 'over' || this.paused || this.attackCd > 0 || p.sliding) return false;
+    this.attackCd = atk.cooldown;
+    this.anim.attack = actionDuration(this.job.key, 'attack') || 0.33;
+    this.anim.t = 0;
+    this.anim.action = 'attack';
+    sfx[atk.sound]?.();
+    const big = this.giant ? 1.8 : 1;
+    this.effects.push({ key: this.fxKey, action: 'effect', t: 0, x: PLAYER_X, follow: true, scale: atk.fxScale * big, flip: true });
+    if (atk.type === 'melee') {
+      this.meleeHit(atk, big);
+    } else {
+      const count = atk.count || 1;
+      for (let i = 0; i < count; i++) {
+        this.shots.push({
+          x: PLAYER_X + 20, y: p.y - 46 * big + (count > 1 ? (i - 0.5) * 16 : 0), delay: i * 0.08,
+          vx: atk.speed, left: atk.range, pierce: atk.pierce || 0, hit: new Set(), r: atk.ballR * big,
+        });
+      }
+    }
+    return true;
+  }
+
+  // 怪物在畫面上的碰撞框（比圖小一點，比較不會「明明沒碰到卻受傷」）
+  mobBox(m) {
+    const sx = m.x - this.worldX;
+    const bob = m.kind === 'fly' ? Math.sin(this.time * 4 + m.bob) * 6 : 0;
+    return { x0: sx + m.w * 0.18, x1: sx + m.w * 0.82, y0: m.bottom - m.h * 0.85 + bob, y1: m.bottom - m.h * 0.05 + bob };
+  }
+
+  alive(m) { return !m.dead && m.dying == null; }
+
+  meleeHit(atk, big) {
+    const p = this.player;
+    const area = { x0: PLAYER_X - 20, x1: PLAYER_X + atk.range * big, y0: p.y - atk.top * big, y1: p.y + 12 };
+    const targets = this.gen.mobs
+      .filter((m) => this.alive(m) && overlap(area, this.mobBox(m)))
+      .sort((a, b) => a.x - b.x)
+      .slice(0, atk.targets);
+    for (const m of targets) this.hitMob(m, atk.power);
+    const bb = this.boss && this.bossLayout().box;
+    if (bb && !this.boss.leaving && overlap(area, bb)) this.hitBoss();
+  }
+
+  // 傷害數字只是好看：依關卡變大，偶爾暴擊
+  rollDamage() {
+    const atk = this.job.attack;
+    const crit = this.rng() < 0.2;
+    const v = Math.round(atk.dmg * (1 + 0.18 * (this.stage - 1)) * lerp(0.85, 1.15, this.rng()) * (crit ? 1.6 : 1));
+    return { v, crit };
+  }
+
+  damageNumber(x, y) {
+    const { v, crit } = this.rollDamage();
+    this.texts.push({ x: x + (this.rng() - 0.5) * 16, y, str: String(v), color: crit ? '#ff6ec7' : '#ffb320', life: 0.8, max: 0.8, dmg: true, crit });
+  }
+
+  hitMob(m, power) {
+    const b = this.mobBox(m);
+    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+    this.effects.push({ key: this.fxKey, action: 'hit', t: 0, x: cx, y: cy + 20, scale: this.job.attack.hitScale, flip: true });
+    this.damageNumber(cx, b.y0 - 10);
+    m.hp = (m.hp ?? (m.kind === 'tall' ? 2 : 1)) - power;
+    if (m.hp > 0) {
+      m.hitT = 0.3;
+      m.x += 22; // 被打退一點
+      sfx.mobHit();
+      return;
+    }
+    m.dying = 0;
+    this.smashed++;
+    this.addScore(150 * this.stage);
+    sfx.smash();
+    // 打倒的怪掉一袋楓幣
+    this.gen.items.push({ type: 'bag', x: m.x + m.w / 2, y: GROUND_Y - 30, r: 15 });
+  }
+
+  hitBoss() {
+    const bb = this.bossLayout().box;
+    const cx = bb.x0 + (bb.x1 - bb.x0) * 0.35, cy = (bb.y0 + bb.y1) / 2;
+    this.effects.push({ key: this.fxKey, action: 'hit', t: 0, x: cx, y: cy + 20, scale: this.job.attack.hitScale, flip: true });
+    this.damageNumber(cx, bb.y0 + 20);
+    this.boss.hitT = 0.2;
+    this.addScore(40 * this.stage);
+    sfx.mobHit();
+  }
+
+  // BOSS 在畫面上的位置（腳底 x、縮放、碰撞框），繪圖和攻擊判定共用
+  bossLayout() {
+    const b = this.boss;
+    const ref = refFrame(b.key);
+    const scale = ref ? b.h / ref.h : 1;
+    const right = ref ? (ref.w - ref.ox) * scale : b.h / 2;
+    const left = ref ? ref.ox * scale : b.h / 2;
+    const fx = VIEW_W - 24 - right + (1 - Math.min(1, b.t)) * 300 + (b.leaving ? b.leaving * 500 : 0);
+    return { fx, scale, box: { x0: fx - left * 0.8, x1: fx + right * 0.8, y0: GROUND_Y - b.h * 0.9, y1: GROUND_Y } };
+  }
+
+  updateShots(dt) {
+    const atk = this.job.attack;
+    for (const s of this.shots) {
+      if (s.delay > 0) { s.delay -= dt; continue; }
+      const step = s.vx * dt;
+      s.x += step;
+      s.left -= step;
+      const box = { x0: s.x - s.r, x1: s.x + s.r, y0: s.y - s.r, y1: s.y + s.r };
+      for (const m of this.gen.mobs) {
+        if (!this.alive(m) || s.hit.has(m) || !overlap(box, this.mobBox(m))) continue;
+        s.hit.add(m);
+        this.hitMob(m, atk.power);
+        if (s.pierce-- <= 0) { s.left = 0; break; }
+      }
+      const bb = this.boss && this.bossLayout().box;
+      if (s.left > 0 && bb && !this.boss.leaving && overlap(box, bb)) { this.hitBoss(); s.left = 0; }
+    }
+    this.shots = this.shots.filter((s) => s.left > 0 && s.x < VIEW_W + 40);
+  }
+
   // ---------- 狀態 ----------
   get giant() { return this.player.power.giant > 0; }
   get playerWorldX() { return this.worldX + PLAYER_X; }
@@ -163,7 +293,11 @@ export class Game {
     p.inv = Math.max(0, p.inv - dt);
     p.hurtFlash = Math.max(0, p.hurtFlash - dt);
 
+    this.attackCd = Math.max(0, this.attackCd - dt);
+    if (this.keys.attack) this.attack();
+
     this.updatePlayer(dt);
+    this.updateShots(dt);
     this.updateMobs(dt);
     this.updateItems(dt);
     this.updatePhase(dt, speed);
@@ -265,14 +399,10 @@ export class Game {
   updateMobs() {
     const box = this.playerBox();
     for (const m of this.gen.mobs) {
-      if (m.dead) continue;
+      if (!this.alive(m)) continue;
       const sx = m.x - this.worldX;
       if (sx > VIEW_W || sx + m.w < 0) continue;
-      const bob = m.kind === 'fly' ? Math.sin(this.time * 4 + m.bob) * 6 : 0;
-      // 碰撞框比圖小一點，比較不會「明明沒碰到卻受傷」
-      const mx0 = sx + m.w * 0.18, mx1 = sx + m.w * 0.82;
-      const my0 = m.bottom - m.h * 0.85 + bob, my1 = m.bottom - m.h * 0.05 + bob;
-      if (box.x1 < mx0 || box.x0 > mx1 || box.y1 < my0 || box.y0 > my1) continue;
+      if (!overlap(box, this.mobBox(m))) continue;
       if (this.giant || this.player.power.dash > 0) {
         m.dead = true;
         m.vx = 500; m.vy = -600; m.rot = 0;
@@ -452,7 +582,12 @@ export class Game {
     this.particles = this.particles.filter((q) => q.life > 0);
     for (const t of this.texts) { t.y -= 40 * dt; t.life -= dt; }
     this.texts = this.texts.filter((t) => t.life > 0);
+    for (const e of this.effects) e.t += dt;
+    this.effects = this.effects.filter((e) => e.t < (actionDuration(e.key, e.action) || 0.3));
+    if (this.boss) this.boss.hitT = Math.max(0, (this.boss.hitT || 0) - dt);
     for (const m of this.gen.mobs) {
+      if (m.hitT > 0) m.hitT -= dt;
+      if (m.dying != null) m.dying += dt;
       if (!m.dead) continue;
       m.x += m.vx * dt; m.bottom += m.vy * dt; m.vy += 1800 * dt; m.rot += 8 * dt;
     }
@@ -477,6 +612,8 @@ export class Game {
     this.drawMobs();
     this.drawBoss();
     this.drawPlayer();
+    this.drawShots();
+    this.drawEffects();
     this.drawFx();
     this.drawHud();
   }
@@ -655,11 +792,19 @@ export class Game {
       // 腳底位置：讓參考格剛好填滿碰撞框
       const fx = x + (ref ? ref.ox * s : m.w / 2);
       const fy = m.bottom - (ref ? (ref.h - ref.oy) * s : 0) + bob;
+      if (m.dying != null) {
+        // 被打倒：播放楓之谷的死亡動畫，播完淡出
+        const dur = actionDuration(m.key, 'die') || 0.4;
+        if (m.dying > dur + 0.25) continue;
+        drawSprite(c, m.key, 'die', m.dying, fx, fy, s, { loop: false, alpha: Math.max(0, 1 - Math.max(0, m.dying - dur) / 0.25) });
+        continue;
+      }
       if (!m.dead && m.kind !== 'fly') {
         c.fillStyle = 'rgba(0,0,0,0.18)';
         c.beginPath(); c.ellipse(x + m.w / 2, m.bottom, m.w * 0.4, 6, 0, 0, Math.PI * 2); c.fill();
       }
-      const drawn = drawSprite(c, m.key, m.dead ? 'hit' : 'move', this.time + m.phase, fx, fy, s, {
+      const action = m.dead || m.hitT > 0 ? 'hit' : 'move';
+      const drawn = drawSprite(c, m.key, action, this.time + m.phase, fx, fy, s, {
         rotate: m.dead ? m.rot : 0, pivot: ref ? ref.oy - ref.h / 2 : 0,
       });
       if (!drawn) { c.fillStyle = '#c62828'; c.fillRect(x, m.bottom - m.h, m.w, m.h); }
@@ -678,16 +823,13 @@ export class Game {
     }
     const b = this.boss;
     if (!b) return;
-    const ref = refFrame(b.key);
-    const enter = Math.min(1, b.t / 1);
-    const scale = ref ? b.h / ref.h : 1;
-    const right = ref ? (ref.w - ref.ox) * scale : b.h / 2;
-    const fx = VIEW_W - 24 - right + (1 - enter) * 300 + (b.leaving ? b.leaving * 500 : 0);
+    const { fx, scale } = this.bossLayout();
     const attacking = b.attackT > 0;
     const atkDur = actionDuration(b.key, 'attack');
-    drawSprite(c, b.key, attacking ? 'attack' : 'move', attacking ? atkDur - b.attackT : this.time, fx, GROUND_Y, scale, {
-      loop: !attacking, alpha: b.leaving ? Math.max(0, 1 - b.leaving) : 1,
-    });
+    const opts = { loop: !attacking, alpha: b.leaving ? Math.max(0, 1 - b.leaving) : 1 };
+    const action = attacking ? 'attack' : 'move', t = attacking ? atkDur - b.attackT : this.time;
+    drawSprite(c, b.key, action, t, fx, GROUND_Y, scale, opts);
+    if (b.hitT > 0) drawSprite(c, b.key, action, t, fx, GROUND_Y, scale, { ...opts, tint: true, alpha: 0.5 });
     if (!b.leaving) {
       // 剩餘時間條
       const left = Math.max(0, b.dur - b.t);
@@ -738,6 +880,24 @@ export class Game {
     }
   }
 
+  drawShots() {
+    const c = this.ctx;
+    const atk = this.job.attack;
+    for (const s of this.shots) {
+      if (s.delay > 0) continue;
+      const ok = drawSprite(c, this.fxKey, 'ball', this.time * 3, s.x, s.y, atk.ballScale, { flip: true, rotate: 0 });
+      if (!ok) { c.fillStyle = '#fff59d'; c.beginPath(); c.arc(s.x, s.y, s.r, 0, Math.PI * 2); c.fill(); }
+    }
+  }
+
+  drawEffects() {
+    const c = this.ctx;
+    for (const e of this.effects) {
+      const y = e.follow ? this.player.y : e.y;
+      drawSprite(c, e.key, e.action, e.t, e.x, y, e.scale, { flip: e.flip, loop: false });
+    }
+  }
+
   drawFx() {
     const c = this.ctx;
     for (const q of this.particles) {
@@ -750,6 +910,7 @@ export class Game {
     c.textBaseline = 'middle';
     for (const t of this.texts) {
       c.globalAlpha = Math.min(1, t.life / t.max * 2);
+      if (t.dmg) { drawDamage(c, t); continue; }
       c.font = 'bold 20px sans-serif';
       c.lineWidth = 4;
       c.strokeStyle = 'rgba(0,0,0,0.6)';
@@ -843,6 +1004,32 @@ export class Game {
 }
 
 // ---------- 小型繪圖工具 ----------
+function overlap(a, b) {
+  return a.x1 > b.x0 && a.x0 < b.x1 && a.y1 > b.y0 && a.y0 < b.y1;
+}
+
+// 楓之谷風格的傷害數字：粗斜體、橘黃漸層、深色描邊；暴擊是粉紅色而且比較大
+function drawDamage(c, t) {
+  const size = t.crit ? 34 : 28;
+  const pop = 1 + Math.max(0, t.life - t.max + 0.12) * 4; // 剛出現時放大一下
+  c.save();
+  c.translate(t.x, t.y);
+  c.scale(pop, pop);
+  c.font = `italic 900 ${size}px "Arial Black", Impact, sans-serif`;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  c.lineJoin = 'round';
+  c.lineWidth = 6;
+  c.strokeStyle = t.crit ? '#4a0030' : '#3a1600';
+  c.strokeText(t.str, 0, 0);
+  const g = c.createLinearGradient(0, -size / 2, 0, size / 2);
+  g.addColorStop(0, t.crit ? '#ffd1f0' : '#fff3a0');
+  g.addColorStop(1, t.color);
+  c.fillStyle = g;
+  c.fillText(t.str, 0, 0);
+  c.restore();
+}
+
 function roundRect(c, x, y, w, h, r) {
   c.beginPath();
   const rr = Math.min(r, w / 2, h / 2);

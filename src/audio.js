@@ -37,5 +37,10 @@ export const sfx = {
   smash: () => tone(300, 0.15, 'square', 0.06, -200),
   power: () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.1, 'square', 0.05), i * 60)),
   clear: () => [784, 988, 1175, 1568].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.07), i * 110)),
+  swing: () => tone(260, 0.12, 'sawtooth', 0.05, -160),
+  shoot: () => tone(1500, 0.08, 'square', 0.035, -900),
+  throw: () => { tone(1200, 0.06, 'triangle', 0.04, -600); setTimeout(() => tone(1300, 0.06, 'triangle', 0.04, -600), 80); },
+  magic: () => tone(500, 0.2, 'sine', 0.07, 700),
+  mobHit: () => tone(420, 0.06, 'square', 0.04, -200),
   over: () => [392, 330, 262, 196].forEach((f, i) => setTimeout(() => tone(f, 0.25, 'triangle', 0.07), i * 160)),
 };

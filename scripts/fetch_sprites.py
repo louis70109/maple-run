@@ -61,6 +61,18 @@ MOBS = {
     6130101: ['move', 'attack1'], 5220002: ['move', 'attack1'], 3220000: ['move', 'attack1'], 6220000: ['move', 'skill1'],
     8130100: ['move', 'attack1'], 8220000: ['move', 'attack1'], 5220003: ['move', 'attack1'], 8180000: ['move', 'attack1'],
 }
+# 職業攻擊特效：effect＝出招特效（以角色腳底為原點）、hit＝打中時的火花、ball＝飛行道具
+SKILL = 'Skill/{}.img/skill/{}'
+FX = {
+    'warrior': {'effect': SKILL.format(100, 1001005) + '/effect', 'hit': SKILL.format(100, 1001005) + '/hit/0'},  # Slash Blast
+    'magician': {'effect': SKILL.format(200, 2001008) + '/effect', 'ball': SKILL.format(200, 2001008) + '/ball',
+                 'hit': SKILL.format(200, 2001008) + '/hit/0'},  # Energy Bolt
+    'archer': {'effect': SKILL.format(300, 3001004) + '/effect', 'ball': 'Item/Consume/0206.img/02060000/bullet',
+               'hit': SKILL.format(300, 3001004) + '/hit/0'},  # Arrow Blow ＋ 箭矢
+    'thief': {'effect': SKILL.format(400, 4001344) + '/effect', 'ball': 'Item/Consume/0207.img/02070000/bullet',
+              'hit': SKILL.format(400, 4001344) + '/hit/0'},  # Lucky Seven ＋ 飛鏢
+    'pirate': {'effect': SKILL.format(500, 5001002) + '/effect', 'hit': SKILL.format(500, 5001002) + '/hit/0'},  # Sommersault Kick
+}
 MAX_FRAMES = 12  # 太長的攻擊動畫抽格，控制檔案大小
 
 
@@ -125,28 +137,35 @@ def job_frames(items, action, count):
     return frames
 
 
-def wz_frame(mob, action, idx):
-    base = f'{API}/wz/GMS/{VERSION}/Mob/{int(mob):07d}.img/{action}/{idx}'
+def wz_frame(path):
+    """讀一格 wz 圖片：path 例如 'Mob/0210100.img/move/0'。回傳 (圖, 原點x, 原點y, 毫秒)"""
+    base = f'{API}/wz/GMS/{VERSION}/{path}'
     node = get(base)
     children = node.get('children', [])
     if not node.get('value') and '_inlink' in children:
-        link = get(base + '/_inlink')['value']  # 例如 "stand/0"
-        return wz_frame(mob, *link.split('/'))
+        link = get(base + '/_inlink')['value']  # 相對於 .img 的路徑，例如 "stand/0"
+        root = path[:path.index('.img/') + 4]
+        return wz_frame(f'{root}/{link}')
     img = Image.open(io.BytesIO(base64.b64decode(node['value']))).convert('RGBA')
-    o = get(base + '/origin')['value'] if 'origin' in children else {'x': img.width // 2, 'y': img.height}
-    delay = int(get(base + '/delay')['value']) if 'delay' in children else 120
+    o = get(base + '/origin')['value'] if 'origin' in children else {'x': img.width // 2, 'y': img.height // 2}
+    delay = int(get(base + '/delay')['value']) if 'delay' in children else 100
     return img, o['x'], o['y'], max(30, delay)
 
 
-def mob_frames(mob, action):
-    listing = get(f'{API}/wz/GMS/{VERSION}/Mob/{int(mob):07d}.img/{action}')
+def wz_frames(path):
+    """讀一整個動作（底下是 0, 1, 2… 的格子），裁邊並抽格。"""
+    listing = get(f'{API}/wz/GMS/{VERSION}/{path}')
     idxs = sorted(int(c) for c in listing.get('children', []) if c.isdigit())
     frames = []
     for i in idxs:
-        img, ox, oy, d = wz_frame(mob, action, i)
+        img, ox, oy, d = wz_frame(f'{path}/{i}')
         c, cx, cy = crop(img, ox, oy)
         frames.append((c, cx, cy, d))
     return sample(frames)
+
+
+def mob_frames(mob, action):
+    return wz_frames(f'Mob/{int(mob):07d}.img/{action}')
 
 
 def pack(key, actions, meta):
@@ -161,6 +180,9 @@ def pack(key, actions, meta):
         sheet.alpha_composite(img, (x, 0))
         entry.setdefault(name, []).append({'x': x, 'y': 0, 'w': img.width, 'h': img.height, 'ox': ox, 'oy': oy, 'd': d})
         x += img.width + 2
+    if key.startswith('fx-'):
+        # 技能特效很大，轉成 256 色（保留透明度）縮小檔案
+        sheet = sheet.quantize(256, method=Image.Quantize.FASTOCTREE)
     sheet.save(os.path.join(OUT, f'{key}.png'), optimize=True)
     first = next(iter(actions.values()))[0][0]
     first.save(os.path.join(OUT, 'preview', f'{key}.png'), optimize=True)
@@ -182,12 +204,17 @@ def main():
     for mob, actions in MOBS.items():
         print('mob', mob)
         acts = {}
+        if 'hit1' in actions:
+            actions = actions + ['die1']  # 被打倒的動畫
         for action in actions:
             frames = mob_frames(mob, action)
             # 遊戲裡統一叫 move / hit / attack
-            name = {'fly': 'move', 'hit1': 'hit', 'skill1': 'attack', 'attack1': 'attack'}.get(action, action)
+            name = {'fly': 'move', 'hit1': 'hit', 'skill1': 'attack', 'attack1': 'attack', 'die1': 'die'}.get(action, action)
             acts[name] = frames
         pack(f'mob-{mob}', acts, meta)
+    for job, parts in FX.items():
+        print('fx', job)
+        pack(f'fx-{job}', {name: wz_frames(path) for name, path in parts.items()}, meta)
     with open(os.path.join(OUT, 'sprites.json'), 'w') as f:
         json.dump(meta, f, separators=(',', ':'))
     total = sum(os.path.getsize(os.path.join(OUT, n)) for n in os.listdir(OUT) if n.endswith('.png'))
