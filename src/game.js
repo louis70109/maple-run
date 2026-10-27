@@ -10,17 +10,21 @@ import { LevelGen } from './level.js';
 import { loadAll, getImage } from './assets.js';
 import { drawSprite, refFrame, aspectOf, actionDuration, loadSheets, previewSrc } from './sprites.js';
 import { sfx } from './audio.js';
+import { initSkill, castSkill, updateSkill, drawSkill, onKill, skillReady } from './skills.js';
 
 const POWER_TIME = { dash: 4, magnet: 8, giant: 5 };
 const POWER_LABEL = { dash: '加速', magnet: '磁鐵', giant: '巨大化' };
 const lerp = (a, b, t) => a + (b - a) * t;
 
 const SPIN_TIME = 0.38; // 二段跳翻滾一圈的時間
+export const MOVE_SPEED = 300; // 左右移動速度（相對畫面）
+export const PX_MIN = 70;
+export const PX_MAX = VIEW_W - 180;
 const PLAYER_SCALE = 1.2;
 
 export function preloadGameAssets(job) {
-  const keys = [job.key, `fx-${job.id}`];
-  const srcs = ['assets/items/haste.png', ...ITEM_ICONS];
+  const keys = [job.key, `fx-${job.id}`, `sk-${job.id}`];
+  const srcs = ['assets/items/haste.png', previewSrc(`sk-${job.id}`), ...ITEM_ICONS];
   for (const t of THEMES) {
     for (const m of [...t.ground_mobs, ...t.tall_mobs, ...t.fly_mobs]) keys.push(m.key);
     keys.push(t.boss.key);
@@ -78,7 +82,11 @@ export class Game {
 
     this.paused = false;
     this.running = false;
-    this.keys = { slide: false, attack: false };
+    this.keys = { slide: false, attack: false, left: false, right: false };
+    this.px = PLAYER_X; // 角色在畫面上的 x，可以左右移動
+    this.shakeT = 0;
+    this.shakePower = 0;
+    initSkill(this);
     this.last = 0;
     this.frame = this.frame.bind(this);
   }
@@ -103,6 +111,7 @@ export class Game {
     this.last = now;
     if (!this.paused) this.update(dt);
     this.draw();
+    this.onFrame?.(this);
     requestAnimationFrame(this.frame);
   }
 
@@ -117,12 +126,24 @@ export class Game {
     p.onGround = false;
     sfx.jump();
     if (p.jumps > 1) {
-      this.burst(PLAYER_X, p.y, '#ffffff', 6);
+      this.burst(this.px, p.y, '#ffffff', 6);
       this.anim.spin = SPIN_TIME;
     }
   }
 
   setSlide(v) { this.keys.slide = v; }
+
+  // 大絕招（K / L 或「技能」按鈕）
+  castSkill() { return castSkill(this); }
+  get skillReady() { return skillReady(this); }
+
+  // 左右移動：往右可以主動靠近 BOSS（風險是反應時間變短、可能撞到 BOSS）
+  setMove(dir, v) { this.keys[dir] = v; }
+
+  shake(t, power) {
+    this.shakeT = Math.max(this.shakeT, t);
+    this.shakePower = Math.max(this.shakePower, power);
+  }
 
   // 按住攻擊鍵會依冷卻時間連續攻擊（跟楓之谷一樣）
   setAttack(v) {
@@ -140,14 +161,14 @@ export class Game {
     this.anim.action = 'attack';
     sfx[atk.sound]?.();
     const big = this.giant ? 1.8 : 1;
-    this.effects.push({ key: this.fxKey, action: 'effect', t: 0, x: PLAYER_X, follow: true, scale: atk.fxScale * big, flip: true });
+    this.effects.push({ key: this.fxKey, action: 'effect', t: 0, x: 0, y: 0, follow: true, scale: atk.fxScale * big, flip: true });
     if (atk.type === 'melee') {
       this.meleeHit(atk, big);
     } else {
       const count = atk.count || 1;
       for (let i = 0; i < count; i++) {
         this.shots.push({
-          x: PLAYER_X + 20, y: p.y - 46 * big + (count > 1 ? (i - 0.5) * 16 : 0), delay: i * 0.08,
+          x: this.px + 20, y: p.y - 46 * big + (count > 1 ? (i - 0.5) * 16 : 0), delay: i * 0.08,
           vx: atk.speed, left: atk.range, pierce: atk.pierce || 0, hit: new Set(), r: atk.ballR * big,
         });
       }
@@ -166,7 +187,7 @@ export class Game {
 
   meleeHit(atk, big) {
     const p = this.player;
-    const area = { x0: PLAYER_X - 20, x1: PLAYER_X + atk.range * big, y0: p.y - atk.top * big, y1: p.y + 12 };
+    const area = { x0: this.px - 20, x1: this.px + atk.range * big, y0: p.y - atk.top * big, y1: p.y + 12 };
     const targets = this.gen.mobs
       .filter((m) => this.alive(m) && overlap(area, this.mobBox(m)))
       .sort((a, b) => a.x - b.x)
@@ -176,7 +197,7 @@ export class Game {
     if (bb && !this.boss.leaving && overlap(area, bb)) this.hitBoss(atk.bossDmg);
     // 格擋：揮砍範圍內的 BOSS 攻擊直接打掉
     for (const pr of this.projectiles) {
-      if (pr.hit || !overlap(area, { x0: pr.x - pr.r, x1: pr.x + pr.r, y0: pr.y - pr.r, y1: pr.y + pr.r })) continue;
+      if (pr.hit || pr.wave || !overlap(area, { x0: pr.x - pr.r, x1: pr.x + pr.r, y0: pr.y - pr.r, y1: pr.y + pr.r })) continue;
       pr.hit = true;
       this.parried = (this.parried || 0) + 1;
       this.effects.push({ key: this.fxKey, action: 'hit', t: 0, x: pr.x, y: pr.y + 20, scale: atk.hitScale * 0.8, flip: true });
@@ -198,10 +219,11 @@ export class Game {
     this.texts.push({ x: x + (this.rng() - 0.5) * 16, y, str: String(v), color: crit ? '#ff6ec7' : '#ffb320', life: 0.8, max: 0.8, dmg: true, crit });
   }
 
-  hitMob(m, power) {
+  // fx：命中火花的圖（預設是普通攻擊的；大絕招會帶自己的）
+  hitMob(m, power, fx) {
     const b = this.mobBox(m);
     const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
-    this.effects.push({ key: this.fxKey, action: 'hit', t: 0, x: cx, y: cy + 20, scale: this.job.attack.hitScale, flip: true });
+    this.effects.push({ key: fx ? fx.key : this.fxKey, action: 'hit', t: 0, x: cx, y: cy + 20, scale: fx ? fx.scale : this.job.attack.hitScale, flip: true });
     this.damageNumber(cx, b.y0 - 10);
     m.hp = (m.hp ?? (m.kind === 'tall' ? 2 : 1)) - power;
     if (m.hp > 0) {
@@ -212,17 +234,18 @@ export class Game {
     }
     m.dying = 0;
     this.smashed++;
+    onKill(this);
     this.addScore(150 * this.stage);
     sfx.smash();
     // 打倒的怪掉一袋楓幣
     this.gen.items.push({ type: 'bag', x: m.x + m.w / 2, y: GROUND_Y - 30, r: 15 });
   }
 
-  hitBoss(dmg) {
-    if (this.boss.leaving) return;
+  hitBoss(dmg, fx) {
+    if (!this.boss || this.boss.leaving) return;
     const bb = this.bossLayout().box;
     const cx = bb.x0 + (bb.x1 - bb.x0) * 0.35, cy = (bb.y0 + bb.y1) / 2;
-    this.effects.push({ key: this.fxKey, action: 'hit', t: 0, x: cx, y: cy + 20, scale: this.job.attack.hitScale, flip: true });
+    this.effects.push({ key: fx ? fx.key : this.fxKey, action: 'hit', t: 0, x: cx, y: cy + 20, scale: fx ? fx.scale : this.job.attack.hitScale, flip: true });
     this.damageNumber(cx, bb.y0 + 20);
     this.boss.hitT = 0.2;
     this.boss.hp -= dmg;
@@ -239,7 +262,7 @@ export class Game {
     const right = ref ? (ref.w - ref.ox) * scale : b.h / 2;
     const left = ref ? ref.ox * scale : b.h / 2;
     const home = VIEW_W - 24 - right;
-    const near = PLAYER_X + 105 + left * 0.8; // 衝過來時停在角色前方，剛好在近戰範圍內
+    const near = this.px + 105 + left * 0.8; // 衝過來時停在角色前方，剛好在近戰範圍內
     const fx = lerp(home, near, b.advance || 0) + (1 - Math.min(1, b.t)) * 300 + (b.leaving && !b.defeated ? b.leaving * 500 : 0);
     return { fx, scale, box: { x0: fx - left * 0.8, x1: fx + right * 0.8, y0: GROUND_Y - b.h * 0.9, y1: GROUND_Y } };
   }
@@ -255,18 +278,18 @@ export class Game {
       for (const m of this.gen.mobs) {
         if (!this.alive(m) || s.hit.has(m) || !overlap(box, this.mobBox(m))) continue;
         s.hit.add(m);
-        this.hitMob(m, atk.power);
+        this.hitMob(m, s.power ?? atk.power, s.hitFx);
         if (s.pierce-- <= 0) { s.left = 0; break; }
       }
       const bb = this.boss && this.bossLayout().box;
-      if (s.left > 0 && bb && !this.boss.leaving && overlap(box, bb)) { this.hitBoss(atk.bossDmg); s.left = 0; }
+      if (s.left > 0 && bb && !this.boss.leaving && overlap(box, bb)) { this.hitBoss(s.bossDmg ?? atk.bossDmg, s.hitFx); s.left = 0; }
     }
     this.shots = this.shots.filter((s) => s.left > 0 && s.x < VIEW_W + 40);
   }
 
   // ---------- 狀態 ----------
   get giant() { return this.player.power.giant > 0; }
-  get playerWorldX() { return this.worldX + PLAYER_X; }
+  get playerWorldX() { return this.worldX + this.px; }
   get stageProgress() { return Math.min(1, (this.distance - this.stageStart) / this.sp.stageLength); }
 
   currentSpeed() {
@@ -282,7 +305,7 @@ export class Game {
     const scale = this.giant ? 1.8 : 1;
     const h = (p.sliding ? PLAYER_SLIDE_H : PLAYER_H) * scale;
     const w = PLAYER_W * scale * (p.sliding ? 1.25 : 1);
-    return { x0: PLAYER_X - w / 2, x1: PLAYER_X + w / 2, y0: p.y - h, y1: p.y };
+    return { x0: this.px - w / 2, x1: this.px + w / 2, y0: p.y - h, y1: p.y };
   }
 
   // ---------- 更新 ----------
@@ -291,6 +314,8 @@ export class Game {
     const p = this.player;
     if (this.banner) { this.banner.t -= dt; if (this.banner.t <= 0) this.banner = null; }
     if (this.themeFade < 1) this.themeFade = Math.min(1, this.themeFade + dt * 0.8);
+    this.shakeT = Math.max(0, this.shakeT - dt);
+    if (this.shakeT <= 0) this.shakePower = 0;
     this.updateFx(dt);
     if (this.phase === 'over') return;
 
@@ -309,8 +334,11 @@ export class Game {
 
     this.attackCd = Math.max(0, this.attackCd - dt);
     if (this.keys.attack) this.attack();
+    const move = (this.keys.right ? 1 : 0) - (this.keys.left ? 1 : 0);
+    if (move) this.px = Math.min(PX_MAX, Math.max(PX_MIN, this.px + move * MOVE_SPEED * dt));
 
     this.updatePlayer(dt);
+    updateSkill(this, dt);
     this.updateShots(dt);
     this.updateMobs(dt);
     this.updateItems(dt);
@@ -390,7 +418,7 @@ export class Game {
     const next = this.gen.allGrounds().find((g) => g.x1 > this.playerWorldX + 60);
     if (next) {
       const target = Math.max(next.x0 + 40, this.playerWorldX);
-      this.worldX = target - PLAYER_X;
+      this.worldX = target - this.px;
     }
     p.y = GROUND_Y - 220;
     p.vy = 0;
@@ -406,7 +434,7 @@ export class Game {
     p.hurtFlash = 0.3;
     this.anim.hurt = 0.45;
     sfx.hit();
-    this.text(PLAYER_X, p.y - 100, `-${Math.round(amount)}`, '#ff5252');
+    this.text(this.px, p.y - 100, `-${Math.round(amount)}`, '#ff5252');
     if (p.hp <= 0) this.gameOver(force ? '掉進坑洞' : '被怪物打倒');
   }
 
@@ -514,9 +542,20 @@ export class Game {
     if (this.phase === 'boss') {
       const b = this.boss;
       b.t += dt;
-      if (b.t < b.dur) {
+      if (b.t < b.dur && b.frozen > 0) {
+        // 被法師的暴風雪凍住：不能移動也不能出招
+      } else if (b.t < b.dur) {
         this.updateBossMode(b, dt);
         b.fire -= dt;
+        // 角色貼太近：BOSS 放地面震波（不能格擋，只能跳過）
+        const bbox = this.bossLayout().box;
+        b.stomp = (b.stomp ?? 1) - dt;
+        if (b.mode === 'ranged' && b.t > 1.2 && bbox.x0 - this.px < 230 && b.stomp <= 0) {
+          b.stomp = 1.3;
+          b.attackT = actionDuration(b.key, 'attack') || 0.6;
+          this.projectiles.push({ x: bbox.x0 - 10, y: GROUND_Y - 14, vx: -520, r: 16, wave: true });
+          this.shake(0.15, 3);
+        }
         if (b.mode === 'ranged' && b.fire <= 0 && b.t > 1.2 && b.t < b.dur - 0.8) {
           b.fire = 1 / this.sp.bossFireRate * lerp(0.7, 1.3, this.rng());
           const high = this.rng() < 0.45;
@@ -539,6 +578,12 @@ export class Game {
 
     // BOSS 攻擊
     const box = this.playerBox();
+    if (this.boss && !this.boss.leaving && this.phase === 'boss' && overlap(box, this.bossLayout().box)) {
+      // 撞到 BOSS：受傷並被彈開
+      const before = this.player.inv;
+      this.damage(this.sp.damage);
+      if (before <= 0) this.px = Math.max(PX_MIN, this.px - 150);
+    }
     for (const pr of this.projectiles) {
       pr.x += pr.vx * dt;
       if (pr.hit) continue;
@@ -636,7 +681,7 @@ export class Game {
     for (const t of this.texts) { t.y -= 40 * dt; t.life -= dt; }
     this.texts = this.texts.filter((t) => t.life > 0);
     for (const e of this.effects) e.t += dt;
-    this.effects = this.effects.filter((e) => e.t < (actionDuration(e.key, e.action) || 0.3));
+    this.effects = this.effects.filter((e) => e.t < (e.loopUntil ?? (actionDuration(e.key, e.action) || 0.3)));
     if (this.boss) this.boss.hitT = Math.max(0, (this.boss.hitT || 0) - dt);
     for (const m of this.gen.mobs) {
       if (m.hitT > 0) m.hitT -= dt;
@@ -651,7 +696,12 @@ export class Game {
     const c = this.ctx;
     const { canvas } = this;
     const scale = canvas.width / VIEW_W;
-    c.setTransform(scale, 0, 0, scale, 0, 0);
+    let sx = 0, sy = 0;
+    if (this.shakeT > 0) {
+      sx = (Math.random() - 0.5) * this.shakePower * 2;
+      sy = (Math.random() - 0.5) * this.shakePower * 2;
+    }
+    c.setTransform(scale, 0, 0, scale, sx * scale, sy * scale);
     c.imageSmoothingEnabled = true;
 
     this.drawBackground(this.theme, 1);
@@ -667,6 +717,7 @@ export class Game {
     this.drawPlayer();
     this.drawShots();
     this.drawEffects();
+    drawSkill(this, this.ctx, drawSprite);
     this.drawFx();
     this.drawHud();
   }
@@ -867,6 +918,14 @@ export class Game {
   drawBoss() {
     const c = this.ctx;
     for (const pr of this.projectiles) {
+      if (pr.wave) {
+        // 地面震波：橘色的弧形
+        c.fillStyle = 'rgba(255,152,0,0.75)';
+        c.beginPath(); c.ellipse(pr.x, GROUND_Y, 26, 22, 0, Math.PI, 0); c.fill();
+        c.fillStyle = 'rgba(255,236,179,0.9)';
+        c.beginPath(); c.ellipse(pr.x, GROUND_Y, 14, 12, 0, Math.PI, 0); c.fill();
+        continue;
+      }
       const g = c.createRadialGradient(pr.x, pr.y, 2, pr.x, pr.y, pr.r + 8);
       g.addColorStop(0, '#fffde7');
       g.addColorStop(0.4, pr.high ? '#7c4dff' : '#ff7043');
@@ -917,12 +976,12 @@ export class Game {
 
     // 影子
     c.fillStyle = 'rgba(0,0,0,0.2)';
-    c.beginPath(); c.ellipse(PLAYER_X, GROUND_Y + 2, 22 * scale, 6, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(this.px, GROUND_Y + 2, 22 * scale, 6, 0, 0, Math.PI * 2); c.fill();
 
     // 加速時的殘影
     if (p.power.dash > 0) {
       for (let i = 3; i >= 1; i--) {
-        drawSprite(c, key, a.action, a.t - i * 0.05, PLAYER_X - i * 26, p.y, scale, { flip: true, alpha: 0.12 + 0.08 * (3 - i) });
+        drawSprite(c, key, a.action, a.t - i * 0.05, this.px - i * 26, p.y, scale, { flip: true, alpha: 0.12 + 0.08 * (3 - i) });
       }
     }
     if (p.inv > 0 && Math.floor(this.time * 20) % 2 && !this.giant && this.phase !== 'over') return;
@@ -930,15 +989,15 @@ export class Game {
     const rotate = a.spin > 0 ? (1 - a.spin / SPIN_TIME) * Math.PI * 2 : 0;
     const opts = { flip: true, rotate, pivot: 32, loop: a.action !== 'attack' };
     if (this.giant) { c.save(); c.shadowColor = '#e040fb'; c.shadowBlur = 18; }
-    const drawn = drawSprite(c, key, a.action, a.t, PLAYER_X, p.y, scale, opts);
+    const drawn = drawSprite(c, key, a.action, a.t, this.px, p.y, scale, opts);
     if (this.giant) c.restore();
-    if (!drawn) { c.fillStyle = '#ffcc80'; c.fillRect(PLAYER_X - 20, p.y - PLAYER_H, 40, PLAYER_H); }
-    if (p.hurtFlash > 0) drawSprite(c, key, a.action, a.t, PLAYER_X, p.y, scale, { ...opts, tint: true });
+    if (!drawn) { c.fillStyle = '#ffcc80'; c.fillRect(this.px - 20, p.y - PLAYER_H, 40, PLAYER_H); }
+    if (p.hurtFlash > 0) drawSprite(c, key, a.action, a.t, this.px, p.y, scale, { ...opts, tint: true });
 
     if (p.power.magnet > 0) {
       c.strokeStyle = `rgba(239,83,80,${0.3 + Math.sin(this.time * 8) * 0.15})`;
       c.lineWidth = 3;
-      c.beginPath(); c.arc(PLAYER_X, p.y - 36 * scale, 70, 0, Math.PI * 2); c.stroke();
+      c.beginPath(); c.arc(this.px, p.y - 36 * scale, 70, 0, Math.PI * 2); c.stroke();
     }
   }
 
@@ -947,7 +1006,9 @@ export class Game {
     const atk = this.job.attack;
     for (const s of this.shots) {
       if (s.delay > 0) continue;
-      const ok = drawSprite(c, this.fxKey, 'ball', this.time * 3, s.x, s.y, atk.ballScale, { flip: true, rotate: 0 });
+      const ok = s.sk
+        ? drawSprite(c, `sk-${this.job.id}`, 'ball', this.time * 3, s.x, s.y, 0.45, { flip: true })
+        : drawSprite(c, this.fxKey, 'ball', this.time * 3, s.x, s.y, atk.ballScale, { flip: true, rotate: 0 });
       if (!ok) { c.fillStyle = '#fff59d'; c.beginPath(); c.arc(s.x, s.y, s.r, 0, Math.PI * 2); c.fill(); }
     }
   }
@@ -955,8 +1016,11 @@ export class Game {
   drawEffects() {
     const c = this.ctx;
     for (const e of this.effects) {
-      const y = e.follow ? this.player.y : e.y;
-      drawSprite(c, e.key, e.action, e.t, e.x, y, e.scale, { flip: e.flip, loop: false });
+      // follow：跟著角色走，x / y 是相對角色腳底的位移
+      // wx：固定在世界座標（跟著地面捲動），例如暴風雪的冰柱、引爆的楓幣
+      const x = e.follow ? this.px + (e.x || 0) : e.wx != null ? e.wx - this.worldX : e.x;
+      const y = e.follow ? this.player.y + (e.y || 0) : e.y;
+      drawSprite(c, e.key, e.action, e.t, x, y, e.scale, { flip: e.flip, loop: !!e.loopUntil });
     }
   }
 

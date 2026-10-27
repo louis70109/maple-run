@@ -22,7 +22,10 @@
     <!-- 遊戲中的操作按鈕 -->
     <div id="hud-controls" class="hidden">
       <button id="btn-pause" class="icon-btn" aria-label="暫停">❚❚</button>
+      <button id="btn-left" class="touch-btn move left-arrow" aria-label="往左">◀<small>← / A</small></button>
       <button id="btn-slide" class="touch-btn left" aria-label="滑行">滑行<small>↓ / S</small></button>
+      <button id="btn-right" class="touch-btn move right-arrow" aria-label="往右">▶<small>→ / D</small></button>
+      <button id="btn-skill" class="touch-btn skill" aria-label="大絕招"><img alt=""><small>K</small></button>
       <button id="btn-attack" class="touch-btn attack" aria-label="攻擊">攻擊<small>Ctrl / J</small></button>
       <button id="btn-jump" class="touch-btn right" aria-label="跳躍">跳躍<small>空白鍵 / ↑</small></button>
     </div>
@@ -117,6 +120,8 @@
           <li>一般怪物打一下就倒，高大的怪物要打兩下（劍士、海盜一下）。打倒會掉楓幣袋。</li>
           <li><b>BOSS 戰</b>：撐過時間就過關；在時間內把 BOSS 打倒可以提早過關、獎勵加倍。BOSS 會不時衝到你面前，這時是近戰職業的機會。</li>
           <li><b>近戰 vs 遠程</b>：遠程（法師、弓箭手、盜賊）可以遠遠清掉小怪；近戰（劍士、海盜）一次打多隻、高大怪一下倒、打 BOSS 傷害高很多，還能用攻擊<b>格擋</b> BOSS 丟來的招式。</li>
+          <li><b>左右移動</b>：←／→（A／D）或左下的 ◀ ▶。往前可以主動貼近 BOSS 輸出，但反應時間變短，撞到 BOSS 也會受傷；往後比較安全。</li>
+          <li><b>大絕招</b>：K、L 或右邊有技能圖示的按鈕，冷卻好了才能放（打倒怪物會縮短冷卻）。劍士「突進」衝過大半個畫面；法師「暴風雪」冰凍全畫面；弓箭手「暴風神射」連射穿透箭；盜賊「楓幣炸彈」引爆畫面上的楓幣；海盜「炸彈桶」滾出去大爆炸。</li>
           <li>撞到怪物會扣 HP；掉進坑洞扣更多 HP，並在下一塊地面復活。</li>
           <li>道具：<b>加速</b>（無敵衝刺）、<b>磁鐵</b>（吸楓幣）、<b>巨大化</b>（撞飛怪物）。</li>
           <li>每關最後有 BOSS，撐過時間就過關並回復 30% HP。關卡越後面越快、越難。</li>

@@ -3,7 +3,7 @@ import { CHANNELS, stageParams } from './params.js';
 import { JOBS } from './themes.js';
 import { VIEW_W } from './physics.js';
 import { Game, preloadGameAssets } from './game.js';
-import { loadSpriteMeta, loadSheets, drawSprite } from './sprites.js';
+import { loadSpriteMeta, loadSheets, drawSprite, previewSrc } from './sprites.js';
 import { isMuted, setMuted } from './audio.js';
 import { loadPublishedConfig, activeConfig, isPreview, getScores, addScore, getPrefs, savePrefs } from './store.js';
 import { openGm } from './gm.js';
@@ -129,7 +129,7 @@ function renderJobs() {
     const el = document.createElement('button');
     el.className = 'job';
     el.setAttribute('aria-pressed', String(j === sel.job));
-    el.innerHTML = `<canvas width="120" height="110" aria-hidden="true"></canvas><b>${j.name}</b><small>${j.attack.role}・${j.attack.name}<br>${j.perk}</small>`;
+    el.innerHTML = `<canvas width="120" height="110" aria-hidden="true"></canvas><b>${j.name}</b><small>${j.attack.role}・${j.attack.name}<br>絕招：${j.skill.name}<br>${j.perk}</small>`;
     el.addEventListener('click', () => {
       sel.job = j;
       savePrefs({ job: j.id });
@@ -168,6 +168,9 @@ async function startGame() {
   await preloadGameAssets(sel.job);
   const params = activeConfig().channels[sel.channel.id];
   game = new Game(canvas, { channel: sel.channel, channelParams: params, job: sel.job, onEnd: showResult });
+  game.onFrame = updateSkillButton;
+  $('#btn-skill img').src = previewSrc(`sk-${sel.job.id}`);
+  $('#btn-skill').setAttribute('aria-label', `大絕招：${sel.job.skill.name}`);
   $('#hud-controls').classList.remove('hidden');
   game.start();
 }
@@ -194,16 +197,24 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) pause
 const JUMP_KEYS = new Set(['Space', 'ArrowUp', 'KeyW', 'KeyZ']);
 const SLIDE_KEYS = new Set(['ArrowDown', 'KeyS', 'KeyX']);
 const ATTACK_KEYS = new Set(['ControlLeft', 'ControlRight', 'KeyJ', 'KeyF']);
+const LEFT_KEYS = new Set(['ArrowLeft', 'KeyA']);
+const RIGHT_KEYS = new Set(['ArrowRight', 'KeyD']);
+const SKILL_KEYS = new Set(['KeyK', 'KeyL']);
 window.addEventListener('keydown', (e) => {
   if (!game || e.target.closest('input, textarea')) return;
   if (JUMP_KEYS.has(e.code)) { e.preventDefault(); if (!e.repeat) game.jump(); }
   else if (SLIDE_KEYS.has(e.code)) { e.preventDefault(); game.setSlide(true); }
   else if (ATTACK_KEYS.has(e.code)) { e.preventDefault(); if (!e.repeat) game.setAttack(true); }
+  else if (LEFT_KEYS.has(e.code)) { e.preventDefault(); game.setMove('left', true); }
+  else if (RIGHT_KEYS.has(e.code)) { e.preventDefault(); game.setMove('right', true); }
+  else if (SKILL_KEYS.has(e.code)) { e.preventDefault(); if (!e.repeat) game.castSkill(); }
   else if (e.code === 'KeyP' || e.code === 'Escape') pause(!game.paused);
 });
 window.addEventListener('keyup', (e) => {
   if (game && SLIDE_KEYS.has(e.code)) game.setSlide(false);
   if (game && ATTACK_KEYS.has(e.code)) game.setAttack(false);
+  if (game && LEFT_KEYS.has(e.code)) game.setMove('left', false);
+  if (game && RIGHT_KEYS.has(e.code)) game.setMove('right', false);
 });
 
 // 觸控按鈕（pointer events，同時支援滑鼠）
@@ -217,6 +228,17 @@ function bindHold(btn, down, up) {
 bindHold($('#btn-jump'), () => game?.jump());
 bindHold($('#btn-slide'), () => game?.setSlide(true), () => game?.setSlide(false));
 bindHold($('#btn-attack'), () => game?.setAttack(true), () => game?.setAttack(false));
+bindHold($('#btn-left'), () => game?.setMove('left', true), () => game?.setMove('left', false));
+bindHold($('#btn-right'), () => game?.setMove('right', true), () => game?.setMove('right', false));
+bindHold($('#btn-skill'), () => game?.castSkill());
+
+// 大絕招按鈕：外圈顯示冷卻進度，好了會發光
+function updateSkillButton(g) {
+  const btn = $('#btn-skill');
+  const p = Math.max(0, Math.min(1, g.skillReady));
+  btn.style.setProperty('--p', p.toFixed(3));
+  btn.classList.toggle('ready', p >= 1 && !g.skill.active);
+}
 
 // ---------- 結果 ----------
 function showResult(r) {

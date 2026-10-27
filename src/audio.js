@@ -42,5 +42,6 @@ export const sfx = {
   throw: () => { tone(1200, 0.06, 'triangle', 0.04, -600); setTimeout(() => tone(1300, 0.06, 'triangle', 0.04, -600), 80); },
   magic: () => tone(500, 0.2, 'sine', 0.07, 700),
   mobHit: () => tone(420, 0.06, 'square', 0.04, -200),
+  skill: () => { [330, 440, 660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'sawtooth', 0.05), i * 50)); setTimeout(() => tone(110, 0.5, 'square', 0.07, -60), 220); },
   over: () => [392, 330, 262, 196].forEach((f, i) => setTimeout(() => tone(f, 0.25, 'triangle', 0.07), i * 160)),
 };

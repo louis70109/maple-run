@@ -64,14 +64,27 @@ MOBS = {
 # 職業攻擊特效：effect＝出招特效（以角色腳底為原點）、hit＝打中時的火花、ball＝飛行道具
 SKILL = 'Skill/{}.img/skill/{}'
 FX = {
-    'warrior': {'effect': SKILL.format(100, 1001005) + '/effect', 'hit': SKILL.format(100, 1001005) + '/hit/0'},  # Slash Blast
-    'magician': {'effect': SKILL.format(200, 2001008) + '/effect', 'ball': SKILL.format(200, 2001008) + '/ball',
+    'warrior': {'icon': SKILL.format(100, 1001005) + '/icon', 'effect': SKILL.format(100, 1001005) + '/effect', 'hit': SKILL.format(100, 1001005) + '/hit/0'},  # Slash Blast
+    'magician': {'icon': SKILL.format(200, 2001008) + '/icon', 'effect': SKILL.format(200, 2001008) + '/effect', 'ball': SKILL.format(200, 2001008) + '/ball',
                  'hit': SKILL.format(200, 2001008) + '/hit/0'},  # Energy Bolt
-    'archer': {'effect': SKILL.format(300, 3001004) + '/effect', 'ball': 'Item/Consume/0206.img/02060000/bullet',
+    'archer': {'icon': SKILL.format(300, 3001004) + '/icon', 'effect': SKILL.format(300, 3001004) + '/effect', 'ball': 'Item/Consume/0206.img/02060000/bullet',
                'hit': SKILL.format(300, 3001004) + '/hit/0'},  # Arrow Blow ＋ 箭矢
-    'thief': {'effect': SKILL.format(400, 4001344) + '/effect', 'ball': 'Item/Consume/0207.img/02070000/bullet',
+    'thief': {'icon': SKILL.format(400, 4001344) + '/icon', 'effect': SKILL.format(400, 4001344) + '/effect', 'ball': 'Item/Consume/0207.img/02070000/bullet',
               'hit': SKILL.format(400, 4001344) + '/hit/0'},  # Lucky Seven ＋ 飛鏢
-    'pirate': {'effect': SKILL.format(500, 5001002) + '/effect', 'hit': SKILL.format(500, 5001002) + '/hit/0'},  # Sommersault Kick
+    'pirate': {'icon': SKILL.format(500, 5001002) + '/icon', 'effect': SKILL.format(500, 5001002) + '/effect', 'hit': SKILL.format(500, 5001002) + '/hit/0'},  # Sommersault Kick
+}
+# 大絕招（sk-<職業>）：icon 放第一個，預覽圖就是技能圖示（給按鈕用）
+SIGNATURE = {
+    'warrior': {'icon': SKILL.format(131, 1311012) + '/icon', 'effect': SKILL.format(131, 1311012) + '/effect',
+                'hit': SKILL.format(131, 1311012) + '/hit/0'},  # Rush 突進
+    'magician': {'icon': SKILL.format(222, 2221007) + '/icon', 'effect': SKILL.format(222, 2221007) + '/effect0',
+                 'tile': SKILL.format(222, 2221007) + '/tile/0', 'hit': SKILL.format(222, 2221007) + '/hit/0'},  # Blizzard 暴風雪
+    'archer': {'icon': SKILL.format(312, 3121020) + '/icon', 'effect': SKILL.format(312, 3121020) + '/keydown',
+               'ball': SKILL.format(312, 3121020) + '/ball', 'hit': SKILL.format(312, 3121020) + '/hit/0'},  # Hurricane 暴風神射
+    'thief': {'icon': SKILL.format(421, 4211006) + '/icon', 'effect': SKILL.format(421, 4211006) + '/effect',
+              'hit': SKILL.format(421, 4211006) + '/hit/0'},  # Meso Explosion 楓幣炸彈
+    'pirate': {'icon': SKILL.format(530, 5301001) + '/icon', 'effect': SKILL.format(530, 5301001) + '/effect',
+               'ball': SKILL.format(530, 5301001) + '/ball', 'hit': SKILL.format(530, 5301001) + '/hit/0'},  # Barrel Bomb 炸彈桶
 }
 MAX_FRAMES = 12  # 太長的攻擊動畫抽格，控制檔案大小
 
@@ -155,6 +168,10 @@ def wz_frame(path):
 def wz_frames(path):
     """讀一整個動作（底下是 0, 1, 2… 的格子），裁邊並抽格。"""
     listing = get(f'{API}/wz/GMS/{VERSION}/{path}')
+    if listing.get('type') == 12:  # 單張圖（例如技能圖示）
+        img, ox, oy, d = wz_frame(path)
+        c, cx, cy = crop(img, ox, oy)
+        return [(c, cx, cy, d)]
     idxs = sorted(int(c) for c in listing.get('children', []) if c.isdigit())
     frames = []
     for i in idxs:
@@ -180,7 +197,7 @@ def pack(key, actions, meta):
         sheet.alpha_composite(img, (x, 0))
         entry.setdefault(name, []).append({'x': x, 'y': 0, 'w': img.width, 'h': img.height, 'ox': ox, 'oy': oy, 'd': d})
         x += img.width + 2
-    if key.startswith('fx-'):
+    if key.startswith(('fx-', 'sk-')):
         # 技能特效很大，轉成 256 色（保留透明度）縮小檔案
         sheet = sheet.quantize(256, method=Image.Quantize.FASTOCTREE)
     sheet.save(os.path.join(OUT, f'{key}.png'), optimize=True)
@@ -215,6 +232,9 @@ def main():
     for job, parts in FX.items():
         print('fx', job)
         pack(f'fx-{job}', {name: wz_frames(path) for name, path in parts.items()}, meta)
+    for job, parts in SIGNATURE.items():
+        print('sk', job)
+        pack(f'sk-{job}', {name: wz_frames(path) for name, path in parts.items()}, meta)
     with open(os.path.join(OUT, 'sprites.json'), 'w') as f:
         json.dump(meta, f, separators=(',', ':'))
     total = sum(os.path.getsize(os.path.join(OUT, n)) for n in os.listdir(OUT) if n.endswith('.png'))

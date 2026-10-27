@@ -14,40 +14,53 @@ setSpriteMeta(JSON.parse(readFileSync(new URL('../assets/sprites/sprites.json', 
 const job = (id) => JOBS.find((j) => j.id === id);
 
 // 直接進入 BOSS 戰；角色無敵（只看輸出），按住攻擊鍵
-function bossFight(jobId, channel = 'normal', seed = 1) {
-  const g = new Game({ getContext: () => null }, { channel: CHANNELS[1], channelParams: defaultConfig().channels[channel], job: job(jobId), seed });
+// strat：stay＝待在原位（只有 BOSS 衝過來時打得到）、close＝主動貼近 BOSS；skill＝大絕招好了就放
+function bossFight(jobId, channel = 'normal', { strat = 'stay', skill = false } = {}) {
+  const g = new Game({ getContext: () => null }, { channel: CHANNELS[1], channelParams: defaultConfig().channels[channel], job: job(jobId), seed: 1 });
   g.update(1 / 60);
   g.distance = g.sp.stageLength; // 跑到關底
   g.gen.mobs = [];
   g.update(1 / 60);
   assert.equal(g.phase, 'boss');
   g.setAttack(true);
+  g.skill.cd = skill ? 0 : 999;
   let t = 0;
   while (g.phase === 'boss' && t < 30) {
     g.player.inv = 10;
     g.player.hp = g.player.hpMax;
     g.gen.mobs = [];
+    if (strat === 'stay' && !g.skill.active) g.px = PLAYER_X;
+    if (strat === 'close' && g.boss.t > 1) g.px = Math.min(g.bossLayout().box.x0 - 110, 780);
+    if (skill && g.skillReady >= 1) g.castSkill();
     g.update(1 / 60);
     t += 1 / 60;
   }
-  return { defeated: !!g.boss.defeated, t, hpLeft: g.boss.hp, maxHp: g.boss.maxHp, parried: g.parried || 0 };
+  return { defeated: !!g.boss.defeated, t, hpLeft: g.boss.hp, maxHp: g.boss.maxHp };
 }
 
-test('近戰職業可以在時間內打倒 BOSS', () => {
+test('近戰主動貼近 BOSS＋大絕招，三個頻道都打得倒', () => {
   for (const id of ['warrior', 'pirate']) {
     for (const ch of ['easy', 'normal', 'hard']) {
-      const r = bossFight(id, ch);
+      const r = bossFight(id, ch, { strat: 'close', skill: true });
       assert.ok(r.defeated, `${id} ${ch}：BOSS 還剩 ${r.hpLeft}/${r.maxHp}`);
     }
   }
 });
 
-test('遠程職業打 BOSS 比近戰慢很多（通常撐到時間到）', () => {
-  const melee = bossFight('warrior');
+test('近戰待在原位只靠 BOSS 衝過來打，打不倒（要主動靠近才有優勢）', () => {
+  for (const id of ['warrior', 'pirate']) {
+    const r = bossFight(id, 'normal', { strat: 'stay' });
+    assert.ok(!r.defeated && r.hpLeft < r.maxHp, `${id}：剩 ${r.hpLeft}`);
+  }
+});
+
+test('遠程就算放大絕招也打不倒 BOSS（通常撐到時間到），近戰明顯比較會打王', () => {
   for (const id of ['magician', 'archer', 'thief']) {
-    const r = bossFight(id);
-    assert.ok(!r.defeated || r.t > melee.t * 1.5, `${id} 太快：${r.t.toFixed(1)}s vs 劍士 ${melee.t.toFixed(1)}s`);
-    assert.ok(r.hpLeft < r.maxHp, `${id} 至少要打得到 BOSS`);
+    for (const strat of ['stay', 'close']) {
+      const r = bossFight(id, 'normal', { strat, skill: true });
+      assert.ok(!r.defeated, `${id} ${strat} 不應該打倒 BOSS`);
+      assert.ok(r.hpLeft < r.maxHp * 0.9, `${id} 至少要打得到 BOSS`);
+    }
   }
 });
 
@@ -89,4 +102,21 @@ test('打倒 BOSS 提早過關，獎勵比撐過時間多', () => {
   assert.equal(g.phase, 'clear');
   assert.equal(g.boss.defeated, true);
   assert.ok(g.score - before >= 2000 * g.sp.scoreMultiplier);
+});
+
+test('貼近 BOSS 會被震波攻擊，震波不能格擋', () => {
+  const g = new Game({ getContext: () => null }, { channel: CHANNELS[1], channelParams: defaultConfig().channels.normal, job: job('warrior'), seed: 1 });
+  g.update(1 / 60);
+  g.distance = g.sp.stageLength;
+  g.update(1 / 60);
+  for (let i = 0; i < 80; i++) g.update(1 / 60);
+  g.boss.mode = 'ranged'; g.boss.modeT = 99; g.boss.fire = 99;
+  g.px = g.bossLayout().box.x0 - 150;
+  let wave = null;
+  for (let i = 0; i < 120 && !wave; i++) { g.player.inv = 5; g.update(1 / 60); wave = g.projectiles.find((p) => p.wave); }
+  assert.ok(wave, '貼近時應該出現震波');
+  wave.x = g.px + 60;
+  g.attackCd = 0;
+  g.attack();
+  assert.ok(!wave.hit, '震波不能被格擋');
 });
