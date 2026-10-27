@@ -129,7 +129,7 @@ function renderJobs() {
     const el = document.createElement('button');
     el.className = 'job';
     el.setAttribute('aria-pressed', String(j === sel.job));
-    el.innerHTML = `<canvas width="120" height="110" aria-hidden="true"></canvas><b>${j.name}</b><small>${j.attack.name}<br>${j.perk}</small>`;
+    el.innerHTML = `<canvas width="120" height="110" aria-hidden="true"></canvas><b>${j.name}</b><small>${j.attack.role}・${j.attack.name}<br>${j.perk}</small>`;
     el.addEventListener('click', () => {
       sel.job = j;
       savePrefs({ job: j.id });
@@ -228,7 +228,8 @@ function showResult(r) {
     <div><span>到達關卡</span><b>STAGE ${r.stage}</b></div>
     <div><span>距離</span><b>${r.distance.toLocaleString()} m</b></div>
     <div><span>楓幣</span><b>${r.meso.toLocaleString()}</b></div>
-    <div><span>打倒怪物</span><b>${r.smashed}</b></div>`;
+    <div><span>打倒怪物</span><b>${r.smashed}</b></div>
+    <div><span>打倒 BOSS</span><b>${r.bossKills}</b></div>`;
   $('#result-form').classList.remove('hidden');
   $('#result-rank').classList.add('hidden');
   $('#result-name').value = getPrefs().name || '';

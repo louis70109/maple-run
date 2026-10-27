@@ -19,6 +19,7 @@
       "stageLength": 9000,
       "bossDuration": 7,
       "bossFireRate": 0.7,
+      "bossHp": 50,
       "powerupChance": 0.12,
       "scoreMultiplier": 1
     },
@@ -38,6 +39,7 @@
       "stageLength": 10000,
       "bossDuration": 9,
       "bossFireRate": 0.9,
+      "bossHp": 60,
       "powerupChance": 0.09,
       "scoreMultiplier": 1.5
     },
@@ -57,6 +59,7 @@
       "stageLength": 11000,
       "bossDuration": 11,
       "bossFireRate": 1.2,
+      "bossHp": 75,
       "powerupChance": 0.07,
       "scoreMultiplier": 2
     }

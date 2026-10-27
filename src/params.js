@@ -42,6 +42,8 @@ export const PARAMS = [
     desc: '撐過 BOSS 攻擊的秒數', def: { easy: 7, normal: 9, hard: 11 } },
   { key: 'bossFireRate', label: 'BOSS 攻擊頻率', unit: '次/s', min: 0.2, max: 3, step: 0.1, group: '關卡',
     desc: '第 1 關 BOSS 每秒丟幾發攻擊（每關 +10%）', def: { easy: 0.7, normal: 0.9, hard: 1.2 } },
+  { key: 'bossHp', label: 'BOSS 耐久', unit: '', min: 10, max: 500, step: 5, group: '關卡',
+    desc: 'BOSS 的血量（每關 +12%）。時間內打倒可提早過關、獎勵加倍；近戰每下 11～13，遠程約 1～1.5', def: { easy: 50, normal: 60, hard: 75 } },
   { key: 'powerupChance', label: '道具機率', unit: '', min: 0, max: 0.5, step: 0.01, group: '關卡',
     desc: '每段地形出現加速／磁鐵／巨大化的機率', def: { easy: 0.12, normal: 0.09, hard: 0.07 } },
   { key: 'scoreMultiplier', label: '分數倍率', unit: '×', min: 0.5, max: 5, step: 0.1, group: '關卡',
@@ -93,6 +95,7 @@ export function stageParams(ch, stage) {
     stageLength: ch.stageLength * (1 + 0.08 * n),
     bossDuration: ch.bossDuration + Math.min(10, n),
     bossFireRate: ch.bossFireRate * (1 + 0.1 * n),
+    bossHp: Math.round(ch.bossHp * (1 + 0.12 * n)),
     powerupChance: ch.powerupChance,
     scoreMultiplier: ch.scoreMultiplier,
   };

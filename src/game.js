@@ -173,7 +173,16 @@ export class Game {
       .slice(0, atk.targets);
     for (const m of targets) this.hitMob(m, atk.power);
     const bb = this.boss && this.bossLayout().box;
-    if (bb && !this.boss.leaving && overlap(area, bb)) this.hitBoss();
+    if (bb && !this.boss.leaving && overlap(area, bb)) this.hitBoss(atk.bossDmg);
+    // 格擋：揮砍範圍內的 BOSS 攻擊直接打掉
+    for (const pr of this.projectiles) {
+      if (pr.hit || !overlap(area, { x0: pr.x - pr.r, x1: pr.x + pr.r, y0: pr.y - pr.r, y1: pr.y + pr.r })) continue;
+      pr.hit = true;
+      this.parried = (this.parried || 0) + 1;
+      this.effects.push({ key: this.fxKey, action: 'hit', t: 0, x: pr.x, y: pr.y + 20, scale: atk.hitScale * 0.8, flip: true });
+      this.text(pr.x, pr.y - 30, '格擋！', '#80d8ff', 0.7);
+      this.addScore(50 * this.stage);
+    }
   }
 
   // 傷害數字只是好看：依關卡變大，偶爾暴擊
@@ -209,14 +218,17 @@ export class Game {
     this.gen.items.push({ type: 'bag', x: m.x + m.w / 2, y: GROUND_Y - 30, r: 15 });
   }
 
-  hitBoss() {
+  hitBoss(dmg) {
+    if (this.boss.leaving) return;
     const bb = this.bossLayout().box;
     const cx = bb.x0 + (bb.x1 - bb.x0) * 0.35, cy = (bb.y0 + bb.y1) / 2;
     this.effects.push({ key: this.fxKey, action: 'hit', t: 0, x: cx, y: cy + 20, scale: this.job.attack.hitScale, flip: true });
     this.damageNumber(cx, bb.y0 + 20);
     this.boss.hitT = 0.2;
+    this.boss.hp -= dmg;
     this.addScore(40 * this.stage);
     sfx.mobHit();
+    if (this.boss.hp <= 0) this.clearStage(true);
   }
 
   // BOSS 在畫面上的位置（腳底 x、縮放、碰撞框），繪圖和攻擊判定共用
@@ -226,7 +238,9 @@ export class Game {
     const scale = ref ? b.h / ref.h : 1;
     const right = ref ? (ref.w - ref.ox) * scale : b.h / 2;
     const left = ref ? ref.ox * scale : b.h / 2;
-    const fx = VIEW_W - 24 - right + (1 - Math.min(1, b.t)) * 300 + (b.leaving ? b.leaving * 500 : 0);
+    const home = VIEW_W - 24 - right;
+    const near = PLAYER_X + 105 + left * 0.8; // 衝過來時停在角色前方，剛好在近戰範圍內
+    const fx = lerp(home, near, b.advance || 0) + (1 - Math.min(1, b.t)) * 300 + (b.leaving && !b.defeated ? b.leaving * 500 : 0);
     return { fx, scale, box: { x0: fx - left * 0.8, x1: fx + right * 0.8, y0: GROUND_Y - b.h * 0.9, y1: GROUND_Y } };
   }
 
@@ -245,7 +259,7 @@ export class Game {
         if (s.pierce-- <= 0) { s.left = 0; break; }
       }
       const bb = this.boss && this.bossLayout().box;
-      if (s.left > 0 && bb && !this.boss.leaving && overlap(box, bb)) { this.hitBoss(); s.left = 0; }
+      if (s.left > 0 && bb && !this.boss.leaving && overlap(box, bb)) { this.hitBoss(atk.bossDmg); s.left = 0; }
     }
     this.shots = this.shots.filter((s) => s.left > 0 && s.x < VIEW_W + 40);
   }
@@ -489,7 +503,11 @@ export class Game {
       this.phase = 'boss';
       this.gen.boss = true;
       const t = this.theme;
-      this.boss = { ...t.boss, t: 0, dur: this.sp.bossDuration, fire: 1.6, leaving: 0, attackT: 0 };
+      // mode：ranged＝站在遠處丟攻擊；charge＝衝到角色前方停一下（近戰的輸出機會）
+      this.boss = {
+        ...t.boss, t: 0, dur: this.sp.bossDuration, fire: 1.6, leaving: 0, attackT: 0,
+        hp: this.sp.bossHp, maxHp: this.sp.bossHp, mode: 'ranged', modeT: 1.8, advance: 0,
+      };
       this.banner = { text: `BOSS 出現！ ${t.boss.name}`, t: 2 };
     }
 
@@ -497,8 +515,9 @@ export class Game {
       const b = this.boss;
       b.t += dt;
       if (b.t < b.dur) {
+        this.updateBossMode(b, dt);
         b.fire -= dt;
-        if (b.fire <= 0 && b.t > 1.2 && b.t < b.dur - 0.8) {
+        if (b.mode === 'ranged' && b.fire <= 0 && b.t > 1.2 && b.t < b.dur - 0.8) {
           b.fire = 1 / this.sp.bossFireRate * lerp(0.7, 1.3, this.rng());
           const high = this.rng() < 0.45;
           b.attackT = actionDuration(b.key, 'attack') || 0.6;
@@ -508,14 +527,7 @@ export class Game {
           });
         }
       } else if (!b.leaving) {
-        b.leaving = 0.01;
-        const bonus = 1000 * this.stage;
-        this.addScore(bonus);
-        this.text(VIEW_W / 2, 200, `STAGE CLEAR  +${Math.round(bonus * this.sp.scoreMultiplier)}`, '#fff176', 2);
-        this.player.hp = Math.min(this.player.hpMax, this.player.hp + this.player.hpMax * 0.3);
-        sfx.clear();
-        this.phase = 'clear';
-        this.clearT = 2;
+        this.clearStage(false);
       }
     }
 
@@ -536,6 +548,47 @@ export class Game {
       }
     }
     this.projectiles = this.projectiles.filter((p) => p.x > -50 && !p.hit);
+  }
+
+  // BOSS 的行動循環：遠處丟攻擊 1.6～2.2 秒 → 衝到前方停 1.5 秒 → 退回去
+  updateBossMode(b, dt) {
+    const IN = 0.35, HOLD = 1.5, TOTAL = IN * 2 + HOLD;
+    b.modeT -= dt;
+    if (b.mode === 'ranged') {
+      if (b.modeT <= 0 && b.t > 1.5 && b.t < b.dur - 1) {
+        b.mode = 'charge';
+        b.modeT = TOTAL;
+        this.text(VIEW_W - 220, 170, '衝過來了！', '#ff8a65', 1.2);
+      }
+    } else {
+      const e = TOTAL - b.modeT;
+      b.advance = e < IN ? e / IN : e < IN + HOLD ? 1 : Math.max(0, (TOTAL - e) / IN);
+      if (e >= IN && e - dt < IN) b.attackT = actionDuration(b.key, 'attack') || 0.6; // 衝到定點時出招
+      if (b.modeT <= 0) {
+        b.mode = 'ranged';
+        b.advance = 0;
+        b.modeT = lerp(1.6, 2.2, this.rng());
+        b.fire = 0.6;
+      }
+    }
+  }
+
+  // 過關：撐過時間，或提早打倒 BOSS（獎勵加倍）
+  clearStage(defeated) {
+    const b = this.boss;
+    b.leaving = 0.01;
+    b.defeated = defeated;
+    b.advance = defeated ? b.advance : 0;
+    this.projectiles = [];
+    const bonus = (defeated ? 2000 : 1000) * this.stage;
+    this.addScore(bonus);
+    const label = defeated ? `擊敗 ${b.name}！` : 'STAGE CLEAR';
+    this.text(VIEW_W / 2, 200, `${label}  +${Math.round(bonus * this.sp.scoreMultiplier)}`, '#fff176', 2);
+    if (defeated) this.bossKills = (this.bossKills || 0) + 1;
+    this.player.hp = Math.min(this.player.hpMax, this.player.hp + this.player.hpMax * 0.3);
+    sfx.clear();
+    this.phase = 'clear';
+    this.clearT = 2;
   }
 
   nextStage() {
@@ -562,7 +615,7 @@ export class Game {
       this.stop();
       this.onEnd?.({
         score: Math.round(this.score), meso: this.meso, stage: this.stage,
-        distance: Math.round(this.distance / 10), smashed: this.smashed, reason,
+        distance: Math.round(this.distance / 10), smashed: this.smashed, bossKills: this.bossKills || 0, reason,
       });
     }, 1200);
   }
@@ -826,23 +879,32 @@ export class Game {
     const { fx, scale } = this.bossLayout();
     const attacking = b.attackT > 0;
     const atkDur = actionDuration(b.key, 'attack');
-    const opts = { loop: !attacking, alpha: b.leaving ? Math.max(0, 1 - b.leaving) : 1 };
+    const opts = { loop: !attacking, alpha: b.leaving ? Math.max(0, 1 - b.leaving * (b.defeated ? 0.7 : 1)) : 1 };
     const action = attacking ? 'attack' : 'move', t = attacking ? atkDur - b.attackT : this.time;
     drawSprite(c, b.key, action, t, fx, GROUND_Y, scale, opts);
-    if (b.hitT > 0) drawSprite(c, b.key, action, t, fx, GROUND_Y, scale, { ...opts, tint: true, alpha: 0.5 });
+    const flicker = b.defeated && Math.floor(this.time * 16) % 2;
+    if (b.hitT > 0 || flicker) drawSprite(c, b.key, action, t, fx, GROUND_Y, scale, { ...opts, tint: true, alpha: 0.5 * opts.alpha });
     if (!b.leaving) {
-      // 剩餘時間條
+      // BOSS 血條＋剩餘時間：撐過時間就過關，提早打倒獎勵加倍
       const left = Math.max(0, b.dur - b.t);
-      const bw = 260;
+      const bw = 300, bx = VIEW_W / 2 - bw / 2;
       c.fillStyle = 'rgba(0,0,0,0.55)';
-      roundRect(c, VIEW_W / 2 - bw / 2 - 4, 78, bw + 8, 28, 8); c.fill();
+      roundRect(c, bx - 6, 74, bw + 12, 46, 9); c.fill();
+      c.fillStyle = '#3a0d0d';
+      roundRect(c, bx, 80, bw, 18, 5); c.fill();
+      const hg = c.createLinearGradient(0, 80, 0, 98);
+      hg.addColorStop(0, '#ff8a80'); hg.addColorStop(1, '#c62828');
+      c.fillStyle = hg;
+      if (b.hp > 0) { roundRect(c, bx, 80, bw * (b.hp / b.maxHp), 18, 5); c.fill(); }
       c.fillStyle = '#7e57c2';
-      roundRect(c, VIEW_W / 2 - bw / 2, 82, bw * (left / b.dur), 20, 6); c.fill();
+      roundRect(c, bx, 104, bw * (left / b.dur), 8, 4); c.fill();
       c.fillStyle = '#fff';
-      c.font = 'bold 14px sans-serif';
+      c.font = 'bold 13px sans-serif';
       c.textAlign = 'center';
       c.textBaseline = 'middle';
-      c.fillText(`${b.name}  撐過 ${left.toFixed(1)} 秒！`, VIEW_W / 2, 92);
+      c.fillText(`${b.name}  ${Math.max(0, Math.ceil(b.hp))} / ${b.maxHp}`, VIEW_W / 2, 89);
+      c.font = 'bold 11px sans-serif';
+      c.fillText(b.mode === 'charge' ? '靠近了！近戰快打！' : `撐過 ${left.toFixed(1)} 秒，或打倒牠`, VIEW_W / 2, 128);
     }
   }
 

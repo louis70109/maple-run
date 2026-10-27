@@ -132,7 +132,7 @@ function renderCurve() {
     const p = stageParams(ch, s);
     rows.push(`<tr><td>第 ${s} 關</td><td>${Math.round(p.speed)}</td><td>${p.hpDrain.toFixed(2)}</td><td>${p.density.toFixed(2)}</td>
       <td>${(p.pitChance * 100).toFixed(0)}%</td><td>${Math.round(p.damage)}</td><td>${Math.round(p.stageLength)}</td>
-      <td>${p.bossDuration}s・${p.bossFireRate.toFixed(2)}/s</td></tr>`);
+      <td>${p.bossDuration}s・${p.bossFireRate.toFixed(2)}/s・HP ${p.bossHp}</td></tr>`);
   }
   root.querySelector('#gm-curve').innerHTML = `<table>
     <thead><tr><th>關卡</th><th>速度</th><th>HP 消耗/s</th><th>障礙密度</th><th>坑洞</th><th>撞怪傷害</th><th>關卡長度</th><th>BOSS</th></tr></thead>
