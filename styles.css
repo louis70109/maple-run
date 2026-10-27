@@ -100,6 +100,7 @@ h2 { font-size: 1.7em; }
 
 .link { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; padding: 0.2em 0.4em; font-size: 0.9em; }
 .title-foot { display: flex; gap: 1em; justify-content: center; flex-wrap: wrap; }
+.offline { color: var(--ok); font-size: 0.9em; font-weight: 700; padding: 0.2em 0.4em; }
 
 .announce {
   overflow: hidden;

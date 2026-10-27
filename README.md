@@ -40,11 +40,19 @@ ES modules 需要透過 http 開啟，不能直接雙擊 `index.html`。
   - token 只存在瀏覽器分頁（sessionStorage）
 - 也可以「匯出 config.json」後手動 commit
 
+## 離線與外部連線
+
+- 遊戲**不會連到任何外部網站**：所有角色、怪物、特效圖片都已經下載放在 `assets/`，跟著網頁一起部署。
+  （只有 GM 按「發佈」時會連 GitHub API。）
+- 第一次開啟時，service worker 會把全部圖片存到瀏覽器，標題畫面出現「✓ 可離線遊玩」後就能斷網玩；
+  安裝成 PWA（加到主畫面）後就像 App 一樣。
+- `npm test` 會檢查執行時的程式沒有外部網址、所有圖片都在 repo 裡。
+
 ## 素材
 
-- 角色與怪物的逐格動畫：用 `scripts/fetch_sprites.py` 從 [maplestory.io](https://maplestory.io) 抓取並打包成
-  `assets/sprites/`（已 commit，遊戲執行時不需連外）。要換裝備或怪物，改腳本裡的 ID 後執行
-  `python3 scripts/fetch_sprites.py`（需要 Pillow）。
+- 角色、怪物、技能特效的逐格動畫：已打包在 `assets/sprites/`。這些圖是開發時用
+  `scripts/fetch_sprites.py` 從 [maplestory.io](https://maplestory.io) 一次下載的；之後只有要換裝備或怪物時，
+  才需要改腳本裡的 ID 重新執行（需要 Pillow），平常部署和遊玩都用不到這支腳本。
 - 道具圖示與 PWA 圖示：取自 [rms-data](https://github.com/louis70109/rms-data)（MapleRoyals 攻略備份）。
 
 楓之谷相關素材版權屬 NEXON 所有，本專案為非商業的同人作品。

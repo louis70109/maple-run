@@ -74,6 +74,17 @@ function renderTitle() {
 
 $('#btn-mute').addEventListener('click', () => { setMuted(!isMuted()); renderTitle(); });
 
+// service worker 把全部圖片下載好之後，標題畫面顯示「可離線遊玩」
+async function checkOffline() {
+  try {
+    await navigator.serviceWorker.ready;
+    for (let i = 0; i < 60; i++) {
+      if (await caches.match('offline-ready')) { $('#offline-badge').classList.remove('hidden'); return; }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  } catch { /* 不支援就不顯示 */ }
+}
+
 let installPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -287,5 +298,6 @@ window.addEventListener('hashchange', route);
   preloadGameAssets(sel.job);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
+    checkOffline();
   }
 })();
