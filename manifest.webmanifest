@@ -1,0 +1,19 @@
+{
+  "name": "楓之谷跑跑 MapleRun",
+  "short_name": "MapleRun",
+  "description": "楓之谷風格的跑酷小遊戲：三個頻道、三種難度，關卡越後面越快。",
+  "lang": "zh-Hant",
+  "start_url": "./",
+  "scope": "./",
+  "id": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1b1f2a",
+  "theme_color": "#e8632a",
+  "categories": ["games"],
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

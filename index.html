@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>楓之谷跑跑 MapleRun</title>
+  <meta name="description" content="楓之谷風格的跑酷小遊戲：三個頻道、三種難度，關卡越後面越快。">
+  <meta name="theme-color" content="#e8632a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MapleRun">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="stage">
+    <canvas id="canvas" width="960" height="540"></canvas>
+
+    <!-- 遊戲中的操作按鈕 -->
+    <div id="hud-controls" class="hidden">
+      <button id="btn-pause" class="icon-btn" aria-label="暫停">❚❚</button>
+      <button id="btn-slide" class="touch-btn left" aria-label="滑行">滑行<small>↓ / S</small></button>
+      <button id="btn-jump" class="touch-btn right" aria-label="跳躍">跳躍<small>空白鍵 / ↑</small></button>
+    </div>
+
+    <!-- 各種畫面 -->
+    <section id="screen-title" class="screen">
+      <div class="panel title-panel">
+        <img class="logo-mob" src="assets/bosses/009.png" alt="">
+        <h1>楓之谷跑跑<span>MapleRun</span></h1>
+        <div id="announce" class="announce hidden"><span></span></div>
+        <div id="preview-badge" class="badge hidden">GM 本機預覽設定中</div>
+        <div class="menu">
+          <button class="btn primary" data-go="channel">開始遊戲</button>
+          <button class="btn" data-go="ranking">排行榜</button>
+          <button class="btn" data-go="help">遊戲說明</button>
+        </div>
+        <div class="title-foot">
+          <button id="btn-install" class="link hidden">安裝到主畫面</button>
+          <button id="btn-mute" class="link">音效：開</button>
+          <a class="link" href="#gm">GM 設定</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-channel" class="screen hidden">
+      <div class="panel">
+        <h2>選擇頻道</h2>
+        <p class="sub">不同頻道就是不同難度，數值由 GM 統一設定。</p>
+        <div id="channel-list" class="channel-list"></div>
+        <button class="btn small ghost" data-go="title">返回</button>
+      </div>
+    </section>
+
+    <section id="screen-job" class="screen hidden">
+      <div class="panel">
+        <h2>選擇職業</h2>
+        <p class="sub" id="job-channel"></p>
+        <div id="job-list" class="job-list"></div>
+        <div class="row">
+          <button class="btn small ghost" data-go="channel">返回</button>
+          <button class="btn primary" id="btn-start">出發！</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-pause" class="screen hidden">
+      <div class="panel narrow">
+        <h2>暫停</h2>
+        <div class="menu">
+          <button class="btn primary" id="btn-resume">繼續</button>
+          <button class="btn" id="btn-quit">回主選單</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-result" class="screen hidden">
+      <div class="panel narrow">
+        <h2>遊戲結束</h2>
+        <p class="sub" id="result-reason"></p>
+        <div id="result-stats" class="stats"></div>
+        <form id="result-form" class="name-form">
+          <input id="result-name" maxlength="12" placeholder="輸入角色名稱" autocomplete="nickname" required>
+          <button class="btn primary small" type="submit">登錄成績</button>
+        </form>
+        <p id="result-rank" class="rank-msg hidden"></p>
+        <div class="row">
+          <button class="btn" id="btn-retry">再玩一次</button>
+          <button class="btn ghost" data-go="title">主選單</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-ranking" class="screen hidden">
+      <div class="panel">
+        <h2>排行榜</h2>
+        <p class="sub">成績存在這台裝置上。</p>
+        <div id="rank-tabs" class="tabs"></div>
+        <ol id="rank-list" class="rank-list"></ol>
+        <button class="btn small ghost" data-go="title">返回</button>
+      </div>
+    </section>
+
+    <section id="screen-help" class="screen hidden">
+      <div class="panel">
+        <h2>遊戲說明</h2>
+        <ul class="help">
+          <li>角色會自動往前跑，<b>HP 會一直減少</b>，吃<b>紅藥水／藍藥水</b>補血。</li>
+          <li><b>跳躍</b>：空白鍵、↑、W 或右下按鈕，空中可以再按一次二段跳（盜賊三段跳）。</li>
+          <li><b>滑行</b>：按住 ↓、S 或左下按鈕，可以從飛行怪物底下滑過去。</li>
+          <li>撞到怪物會扣 HP；掉進坑洞扣更多 HP，並在下一塊地面復活。</li>
+          <li>道具：<b>加速</b>（無敵衝刺）、<b>磁鐵</b>（吸楓幣）、<b>巨大化</b>（撞飛怪物）。</li>
+          <li>每關最後有 BOSS，撐過時間就過關並回復 30% HP。關卡越後面越快、越難。</li>
+          <li>經過 8 個地區後會從弓箭手村再來一輪，速度繼續提升。</li>
+        </ul>
+        <button class="btn small ghost" data-go="title">返回</button>
+      </div>
+    </section>
+
+    <div id="rotate-hint" class="rotate-hint">把手機轉成橫向玩起來比較順手</div>
+  </div>
+
+  <!-- GM 設定介面 -->
+  <section id="gm" class="gm hidden" aria-label="GM 設定"></section>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
